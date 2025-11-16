@@ -1,0 +1,390 @@
+/** @format */
+"use client";
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { auth } from "@/firebase/config";
+import app from "@/firebase/config";
+import { onAuthStateChanged } from "firebase/auth";
+import { getDatabase, ref, get } from "firebase/database";
+import image from "../public/images/profile.jpeg";
+import { FaUser, FaCog, FaCrown } from "react-icons/fa";
+
+const Navbar = () => {
+  const pathname = usePathname();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [user, setUser] = useState(null);
+  const [isLogin, setIsLogin] = useState(null);
+  const [fullName, setFullName] = useState("");
+  const [isPremium, setIsPremium] = useState(false);
+  const [profilePhoto, setProfilePhoto] = useState(image);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const db = getDatabase(app);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const loginStatus = localStorage.getItem("IsLogin");
+      setIsLogin(loginStatus);
+
+      const userId = localStorage.getItem("UID");
+      if (userId) {
+        const findUser = ref(db, `user/${userId}`);
+        get(findUser)
+          .then((snapshot) => {
+            let Name = snapshot.val()?.name;
+            let fname = snapshot.val()?.fname;
+            let lname = snapshot.val()?.lname;
+            let email = snapshot.val()?.email;
+            let premium = snapshot.val()?.Payment?.Status;
+            let photoURL = snapshot.val()?.profilePhoto;
+            let user = "";
+
+            if (Name) {
+              user = Name;
+              const cleanedName = user.replace(/\s/g, "");
+              localStorage.setItem("name", user);
+              localStorage.setItem("email", email);
+              setFullName(user);
+            } else {
+              user = fname + " " + lname;
+              const cleanedName = user.replace(/\s/g, "");
+              localStorage.setItem("name", user);
+              localStorage.setItem("email", email);
+              setFullName(user);
+            }
+
+            if (premium === "Premium") {
+              setIsPremium(true);
+            } else {
+              setIsPremium(false);
+            }
+
+            if (
+              photoURL &&
+              typeof photoURL === "string" &&
+              photoURL.startsWith("https://")
+            ) {
+              setProfilePhoto(photoURL);
+            } else {
+              setProfilePhoto(image);
+            }
+          })
+          .catch((error) => {
+            console.error("Error fetching user data:", error);
+            setProfilePhoto(image);
+          });
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  useEffect(() => {
+    setIsMenuOpen(false);
+    setIsProfileMenuOpen(false);
+  }, [pathname]);
+
+  const isActive = (path) => pathname === path;
+  const toggleMenu = () => setIsMenuOpen((prev) => !prev);
+  const toggleProfileMenu = () => setIsProfileMenuOpen((prev) => !prev);
+
+  return (
+    <nav className="fixed top-0 left-0 w-full bg-gradient-to-r from-[#11011E] to-[#2A0A3A] text-white py-2 px-4 sm:px-10 flex items-center z-50 shadow-lg shadow-[#ffffff]/20" style={{ minHeight: "56px" }}>
+      {/* Left: Logo (square, no app name) */}
+      <div className="flex items-center flex-shrink-0">
+        <Link href="/">
+          <Image
+            src="/images/company_logo.png"
+            alt="Logo"
+            width={38}
+            height={38}
+            className="hover:scale-105 transition-transform duration-200" // removed rounded-full
+          />
+        </Link>
+      </div>
+
+      {/* Spacer to push menu to the right */}
+      <div className="flex-1" />
+
+      {/* Right: Menu + Profile/Buttons */}
+      <div className="flex items-center space-x-2 sm:space-x-4">
+        <ul className="hidden sm:flex space-x-7 text-sm sm:text-base font-medium items-center">
+          {[
+            { label: "Home", path: "/" },
+            { label: "Referral", path: "/referral" },
+            { label: "Skills", path: "/course/jobdescription" },
+            { label: "privacy policy", path: "/policy" },
+          ].map((item) => (
+            <li
+              key={item.path}
+              className={`px-2 py-1 rounded-md transition duration-200 transform hover:scale-105
+                ${isActive(item.path)
+                  ? "text-[#0FAE96] border-b-2 border-[#0FAE96] pb-1"
+                  : "hover:text-[#0FAE96] hover:bg-[#0FAE96]/20"}
+              `}
+            >
+              <Link href={item.path}>{item.label}</Link>
+            </li>
+          ))}
+          <li>
+            <Link href="/hr">
+              <button className="ml-2 bg-[#23272F] text-white px-4 py-1.5 rounded-full font-semibold shadow-sm border border-[#23272F] hover:bg-[#0FAE96] hover:text-black transition duration-200 text-xs sm:text-sm">
+                Switch to Recruiter
+              </button>
+            </Link>
+          </li>
+        </ul>
+        {/* Profile/Buttons */}
+        {isLogin ? (
+          <div className="relative flex items-center space-x-2">
+            <div className="relative">
+              <Image
+                src={profilePhoto}
+                alt="User Profile"
+                width={36}
+                height={36}
+                className={`rounded-full object-cover transition-transform duration-200 cursor-pointer ${
+                  isPremium ? "border-2 border-yellow-400" : "border-2 border-gray-300"
+                }`}
+                style={{ borderRadius: '50%', objectFit: 'cover', width: '36px', height: '36px' }}
+                onClick={toggleProfileMenu}
+              />
+              {isPremium && (
+                <FaCrown
+                  className="absolute top-0 right-0 w-4 h-4 text-yellow-400 transform translate-x-1/2 -translate-y-1/2"
+                  onClick={toggleProfileMenu}
+                />
+              )}
+            </div>
+            {isProfileMenuOpen && (
+              <div className="absolute top-12 right-0 bg-[#2A0A3A] rounded-md shadow-lg py-2 w-40 z-50">
+                <button
+                  onClick={toggleProfileMenu}
+                  className="absolute top-2 right-2 text-white hover:text-red-500 transition-colors duration-200"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+                <ul className="space-y-1">
+                  <li>
+                    <Link
+                      href="/profile"
+                      className="flex items-center space-x-2 text-white hover:text-[#0FAE96] hover:bg-[#0FAE96]/20 px-4 py-2 rounded-md transition duration-200"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                    >
+                      <FaUser className="w-4 h-4" />
+                      <span>Profile</span>
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/settings"
+                      className="flex items-center space-x-2 text-white hover:text-[#0FAE96] hover:bg-[#0FAE96]/20 px-4 py-2 rounded-md transition duration-200"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                    >
+                      <FaCog className="w-4 h-4" />
+                      <span>Settings</span>
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <Link href="/sign-in">
+              <button className="text-xs sm:text-sm text-white hover:text-[#0FAE96] hover:bg-[#0FAE96]/20 px-2 py-1 rounded-md transform transition duration-200 hover:scale-105">
+                Login
+              </button>
+            </Link>
+            <Link href="/sign-up">
+              <button className="bg-[#0FAE96] text-black px-4 py-1.5 rounded-full hover:bg-[#0FAE96]/80 transform transition duration-200 hover:scale-105 text-xs sm:text-sm font-semibold">
+                Sign Up
+              </button>
+            </Link>
+          </>
+        )}
+      </div>
+
+      {/* Mobile: Hamburger and Drawer */}
+      <div className="sm:hidden flex items-center ml-2">
+        <button
+          onClick={toggleMenu}
+          className="text-[#0FAE96] focus:outline-none focus:ring-2 focus:ring-[#0FAE96] rounded"
+        >
+          <svg
+            className={`w-6 h-6 transform transition-transform duration-300 ${
+              isMenuOpen ? "rotate-45" : ""
+            }`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d={
+                isMenuOpen
+                  ? "M6 18L18 6M6 6l12 12"
+                  : "M4 6h16M4 12h16m-7 6h7"
+              }
+            />
+          </svg>
+        </button>
+      </div>
+
+      {isMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40"
+          onClick={() => setIsMenuOpen(false)}
+        ></div>
+      )}
+
+      <div
+        className={`sm:hidden fixed top-0 left-0 w-4/5 h-full bg-[#11011E] py-6 px-6 shadow-lg z-50 transform transition-transform duration-300 ${
+          isMenuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <ul className="space-y-6 text-base">
+          {[
+            { label: "Home", path: "/" },
+            { label: "Referral", path: "/referral" },
+            { label: "Skills", path: "/course/jobdescription" },
+            { label: "privacy policy", path: "/policy" },
+          ].map((item) => (
+            <li
+              key={item.path}
+              className={`${
+                isActive(item.path)
+                  ? "text-[#0FAE96] border-l-4 border-[#0FAE96]"
+                  : "hover:text-[#0FAE96] hover:bg-[#0FAE96]/20"
+              } px-2 py-1 rounded-md transition duration-200 transform hover:scale-105`}
+            >
+              <Link
+                href={item.path}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {item.label}
+              </Link>
+            </li>
+          ))}
+          <li>
+            <Link href="/hr" onClick={() => setIsMenuOpen(false)}>
+              <button className="bg-[#23272F] text-white px-4 py-1.5 rounded-full font-semibold shadow-sm border border-[#23272F] hover:bg-[#0FAE96] hover:text-black transition duration-200 text-sm">
+                Switch to Recruiter
+              </button>
+            </Link>
+          </li>
+          {isLogin ? (
+            <li className="flex items-center space-x-2">
+              <div className="relative">
+                <Image
+                  src={profilePhoto}
+                  alt="User Profile"
+                  width={40}
+                  height={40}
+                  className={`rounded-full object-cover ${
+                    isPremium
+                      ? "border-2 border-yellow-400"
+                      : "border-2 border-gray-300"
+                  } hover:scale-110 transition-transform duration-200 cursor-pointer`}
+                  style={{ borderRadius: '50%', objectFit: 'cover', width: '40px', height: '40px' }}
+                  onClick={toggleProfileMenu}
+                />
+                {isPremium && (
+                  <FaCrown
+                    className="absolute top-0 right-0 w-4 h-4 text-yellow-400 transform translate-x-1/2 -translate-y-1/2"
+                    onClick={toggleProfileMenu}
+                  />
+                )}
+              </div>
+              <span className="text-[#0FAE96]">{fullName}</span>
+            </li>
+          ) : (
+            <li className="hover:text-[#0FAE96] transition duration-200 transform hover:scale-105">
+              <Link href="/sign-in" onClick={() => setIsMenuOpen(false)}>
+                Login / Sign Up
+              </Link>
+            </li>
+          )}
+        </ul>
+        {isLogin && isProfileMenuOpen && (
+          <div className="mt-4 bg-[#2A0A3A] rounded-md shadow-lg py-2 px-4 relative">
+            <button
+              onClick={toggleProfileMenu}
+              className="absolute top-2 right-2 text-white hover:text-red-500 transition-colors duration-200"
+            >
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+            <ul className="space-y-2">
+              <li>
+                <Link
+                  href="/profile"
+                  className="flex items-center space-x-2 text-white hover:text-[#0FAE96] hover:bg-[#0FAE96]/20 px-2 py-1 rounded-md transition duration-200"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    setIsProfileMenuOpen(false);
+                  }}
+                >
+                  <FaUser className="w-4 h-4" />
+                  <span>Profile</span>
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/settings"
+                  className="flex items-center space-x-2 text-white hover:text-[#0FAE96] hover:bg-[#0FAE96]/20 px-2 py-1 rounded-md transition duration-200"
+                  onClick={() => {
+                    setIsMenuOpen(false);
+                    setIsProfileMenuOpen(false);
+                  }}
+                >
+                  <FaCog className="w-4 h-4" />
+                  <span>Settings</span>
+                </Link>
+              </li>
+            </ul>
+          </div>
+        )}
+      </div>
+    </nav>
+  );
+};
+
+export default Navbar;

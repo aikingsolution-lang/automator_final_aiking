@@ -1,0 +1,188 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #11011E;
+  --foreground: #11011E;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #11011E;
+    --foreground: #11011E;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.scrollbar-hidden {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, and Opera */
+}
+
+/* Mic Animation Styles */
+/* Mic Animation Styles */
+.mic-animation {
+  position: relative;
+  transition: transform 0.1s ease-out, opacity 0.1s ease-out; /* Faster transitions */
+  transform-origin: center;
+  will-change: transform, opacity, filter; /* Optimize for performance */
+}
+
+.mic-animation::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 180%; /* Slightly larger glow */
+  height: 180%;
+  background: var(--glow-color, transparent); /* <- change this line */
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 var(--glow-intensity, 0px) var(--glow-color, transparent);
+  border-radius: 50%;
+  z-index: -1;
+  opacity: 0.7; /* Slightly brighter glow */
+  transition: box-shadow 0.1s ease-out, transform 0.1s ease-out; /* Faster response */
+}
+
+.mic-animation::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: var(--glow-color, transparent);
+  opacity: var(--overlay-opacity, 0);
+  border-radius: 50%;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  transition: opacity 0.1s ease-out; /* Faster overlay */
+}
+
+/* Ensure the image itself is styled correctly */
+img.mic-animation {
+  display: block;
+  object-fit: contain;
+  filter: brightness(1.1); /* Slight brightness boost for clarity */
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-up {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.05);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 1s ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 1s ease-out;
+}
+
+.animate-scale-up {
+  animation: scale-up 0.3s ease-in-out;
+}
+
+/* Custom scrollbar styles */
+.hide-scrollbar {
+  overflow: auto;
+  scrollbar-width: none; /* For Firefox */
+  -ms-overflow-style: none; /* For IE and Edge */
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* For Chrome, Safari, and Opera */
+}
+
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+/* .mic-animation {
+  --glow-color: #0FAE96 !important; 
+  --glow-intensity: 10px !important;
+  --overlay-opacity: 0.5 !important;
+} */
+
+@keyframes glowingGradient {
+  0% {
+    --glow-color: rgba(255, 0, 150, 0.6);
+  }
+  25% {
+    --glow-color: rgba(0, 200, 255, 0.6);
+  }
+  50% {
+    --glow-color: rgba(0, 255, 150, 0.6);
+  }
+  75% {
+    --glow-color: rgba(255, 100, 0, 0.6);
+  }
+  100% {
+    --glow-color: rgba(255, 0, 150, 0.6);
+  }
+}
+
+.mic-animation.dynamic-glow::before {
+  animation: glowingGradient 4s infinite linear;
+}
