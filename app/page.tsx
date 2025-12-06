@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import CompaniesSection from '@/components/home/CompaniesSection';
@@ -12,12 +12,16 @@ import PricingSection from '@/components/pricing/PricingSection';
 import TestimonialSection from "../components/home/TestimonialSection";
 import JobSeeker from "../components/JobSeeker";
 import VideoSection from "../components/home/video";
-import ResumeUpload from "@/components/upload/ResumeUpload";
-export default function Mainpage({ params }) {
+
+// ✅ Define proper type for params
+interface MainpageProps {
+  params?: {
+    referral?: string;
+  };
+}
+
+export default function Mainpage({ params }: MainpageProps) {
   const router = useRouter();
-  const [jobDescription, setJobDescription] = useState('');
-  const [recruiterSuggestion, setRecruiterSuggestion] = useState('');
-  const [jobTitle, setJobTitle] = useState('');
 
   useEffect(() => {
     if (params?.referral) {

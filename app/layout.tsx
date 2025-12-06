@@ -10,9 +10,9 @@ import { ToastContainer } from "react-toastify";
 import { usePathname } from "next/navigation";
 import { AppProvider } from "@/context/AppContext";
 import { Sonner } from "@/components/ui/sonnerCourse";
-import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import { TanstackProvider } from "@/components/providers/TanstackProvider";
+import NextTopLoader from "nextjs-toploader";
 
 
 const geistSans = Geist({
@@ -38,6 +38,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <NextTopLoader
+          color="#0FAE96"
+          showSpinner={false}
+        />
         <TanstackProvider>
           <TooltipProvider>
             <AppProvider>
