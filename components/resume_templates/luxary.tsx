@@ -43,19 +43,9 @@ export default function Luxary() {
   const paddingLeftRight = 24;
   const availableContentHeight = basePageHeight - 2 * paddingTopBottom;
 
-  // Responsive state
-  const [isMounted, setIsMounted] = useState(false);
-  const [pageGroups, setPageGroups] = useState<unknown[]>([]);
-  const contentRef = useRef<HTMLDivElement | null>(null);
-
   // Dynamic font size based on screen size
   const responsiveFontSize = Math.max(fontSize * (window.innerWidth < 640 ? 0.8 : 1), 12);
   const headerFontSize = Math.max(responsiveFontSize - 5, 12);
-
-  // Ensure component is mounted
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
 
   // Generate all resume elements in the desired order
   const generateElements = () => {
@@ -227,88 +217,6 @@ export default function Luxary() {
     skills,
   ]);
 
-  // Pagination logic
-  useEffect(() => {
-    if (!isMounted || !contentRef.current) return;
-
-    const pageHeight = availableContentHeight;
-    const pageGroupsTemp: any[] = [];
-    let currentPage: any[] = [];
-    let currentHeight = 0;
-    let i = 0;
-
-    const measureElementHeight = (element: any) => {
-      const elementNode = contentRef.current?.querySelector(`#${element.id}`);
-      return elementNode?.scrollHeight || 50; // Default to 50px if height is 0
-    };
-
-    while (i < elements.length) {
-      const element = elements[i];
-      const elementHeight = measureElementHeight(element);
-
-      if (elementHeight === 0) {
-        console.warn(`Element ${element.id} has zero height, skipping`);
-        i++;
-        continue;
-      }
-
-      if (element.type === "experience-header") {
-        let totalHeight = elementHeight;
-        let descIndex = i + 1;
-        const descriptions: any[] = [];
-
-        while (
-          descIndex < elements.length &&
-          elements[descIndex].type === "experience-desc"
-        ) {
-          const descHeight = measureElementHeight(elements[descIndex]);
-          descriptions.push(elements[descIndex]);
-          totalHeight += descHeight;
-          descIndex++;
-        }
-
-        if (currentHeight + totalHeight > pageHeight && currentPage.length > 0) {
-          pageGroupsTemp.push([...currentPage]);
-          currentPage = [];
-          currentHeight = 0;
-        }
-
-        currentPage.push(element);
-        currentHeight += elementHeight;
-
-        descriptions.forEach((desc) => {
-          const descHeight = measureElementHeight(desc);
-          if (currentHeight + descHeight <= pageHeight) {
-            currentPage.push(desc);
-            currentHeight += descHeight;
-          } else {
-            pageGroupsTemp.push([...currentPage]);
-            currentPage = [desc];
-            currentHeight = descHeight;
-          }
-        });
-
-        i = descIndex;
-      } else {
-        if (currentHeight + elementHeight > pageHeight && currentPage.length > 0) {
-          pageGroupsTemp.push([...currentPage]);
-          currentPage = [];
-          currentHeight = 0;
-        }
-
-        currentPage.push(element);
-        currentHeight += elementHeight;
-        i++;
-      }
-    }
-
-    if (currentPage.length > 0) {
-      pageGroupsTemp.push([...currentPage]);
-    }
-
-    setPageGroups(pageGroupsTemp);
-  }, [elements, isMounted]);
-
   // Render individual resume elements
   const renderElement = (element: any) => {
     const linkStyle = underlineLinks ? "underline" : "no-underline";
@@ -461,14 +369,14 @@ export default function Luxary() {
                       strokeWidth="2"
                     />
                   </svg>
-                 <a
-                      href={`${element.data.twitter}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`text-blue-700 hover:underline ${linkStyle}`}
-                    >
-                      {element.data.twitter}
-                    </a>
+                  <a
+                    href={`${element.data.twitter}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`text-blue-700 hover:underline ${linkStyle}`}
+                  >
+                    {element.data.twitter}
+                  </a>
                 </div>
               )}
               {element.data.website && (
@@ -490,14 +398,14 @@ export default function Luxary() {
                     <line x1="7.14" y1="32.46" x2="56.86" y2="31.85" />
                     <path d="M53.57,57,58,52.56l-8-8,4.55-2.91a.38.38,0,0,0-.12-.7L39.14,37.37a.39.39,0,0,0-.46.46L42,53.41a.39.39,0,0,0,.71.13L45.57,49Z" />
                   </svg>
-                 <a
-                      href={`${element.data.website}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`text-blue-700 hover:underline ${linkStyle}`}
-                    >
-                      {element.data.website}
-                    </a>
+                  <a
+                    href={`${element.data.website}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`text-blue-700 hover:underline ${linkStyle}`}
+                  >
+                    {element.data.website}
+                  </a>
                 </div>
               )}
               {element.data.linkedin && (
@@ -512,13 +420,13 @@ export default function Luxary() {
                     <path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2zM4 2a2 2 0 100 4 2 2 0 000-4z" />
                   </svg>
                   <a
-                      href={`${element.data.linkedin}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`text-blue-700 hover:underline ${linkStyle}`}
-                    >
-                      {element.data.linkedin}
-                    </a>
+                    href={`${element.data.linkedin}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`text-blue-700 hover:underline ${linkStyle}`}
+                  >
+                    {element.data.linkedin}
+                  </a>
                 </div>
               )}
               {element.data.github && (
@@ -531,13 +439,13 @@ export default function Luxary() {
                     <path d="M12 0C5.37 0 0 5.373 0 12c0 5.303 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577v-2.234c-3.338.726-4.033-1.415-4.033-1.415-.546-1.388-1.333-1.758-1.333-1.758-1.089-.745.082-.729.082-.729 1.205.084 1.84 1.237 1.84 1.237 1.07 1.834 2.809 1.304 3.495.996.108-.775.418-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.933 0-1.311.467-2.382 1.235-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.3 1.23a11.513 11.513 0 013.003-.404c1.02.005 2.047.138 3.003.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.119 3.176.77.84 1.233 1.911 1.233 3.221 0 4.61-2.807 5.625-5.48 5.922.43.372.814 1.102.814 2.222v3.293c0 .322.218.694.825.576C20.565 21.796 24 17.298 24 12c0-6.627-5.373-12-12-12z" />
                   </svg>
                   <a
-                      href={`${element.data.github}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={`text-blue-700 hover:underline ${linkStyle}`}
-                    >
-                      {element.data.github}
-                    </a>
+                    href={`${element.data.github}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`text-blue-700 hover:underline ${linkStyle}`}
+                  >
+                    {element.data.github}
+                  </a>
                 </div>
               )}
             </div>
@@ -571,38 +479,38 @@ export default function Luxary() {
           </div>
         );
       case "experience-desc":
-  // Return null if description is undefined or empty
-  if (!element.data.description || element.data.description.trim().length === 0) {
-    return null;
-  }
+        // Return null if description is undefined or empty
+        if (!element.data.description || element.data.description.trim().length === 0) {
+          return null;
+        }
 
-  // Protect ".js" by replacing the period with a placeholder
-  const sentences = element.data.description
-    .replace(
-      /(\b(?:Express|React|Node)\.js\b)/g,
-      (match) => match.replace(".", "[DOT]")
-    )
-    .split(/\.\s+(?=[A-Z])/) // Split on ". " followed by a capital letter
-    .map((sentence: string) =>
-      sentence
-        .replace(/\[DOT\]/g, ".") // Restore ".js"
-        .trim()
-    )
-    .filter((sentence: string) => sentence.length > 0);
+        // Protect ".js" by replacing the period with a placeholder
+        const sentences = element.data.description
+          .replace(
+            /(\b(?:Express|React|Node)\.js\b)/g,
+            (match: string) => match.replace(".", "[DOT]")
+          )
+          .split(/\.\s+(?=[A-Z])/) // Split on ". " followed by a capital letter
+          .map((sentence: string) =>
+            sentence
+              .replace(/\[DOT\]/g, ".") // Restore ".js"
+              .trim()
+          )
+          .filter((sentence: string) => sentence.length > 0);
 
-  return (
-    <ul
-      className="list-disc ml-4 sm:ml-6 text-xs sm:text-sm text-gray-800 mb-3 sm:mb-4"
-      style={descriptionStyle}
-    >
-      {sentences.map((detail: string, i: number) => (
-        <li key={`experience-${element.data.parentId}-desc-${i}`}>
-          {detail}
-          {i < sentences.length - 1 && detail.endsWith(".") ? "" : "."}
-        </li>
-      ))}
-    </ul>
-  );
+        return (
+          <ul
+            className="list-disc ml-4 sm:ml-6 text-xs sm:text-sm text-gray-800 mb-3 sm:mb-4"
+            style={descriptionStyle}
+          >
+            {sentences.map((detail: string, i: number) => (
+              <li key={`experience-${element.data.parentId}-desc-${i}`}>
+                {detail}
+                {i < sentences.length - 1 && detail.endsWith(".") ? "" : "."}
+              </li>
+            ))}
+          </ul>
+        );
       case "project-header":
         return (
           <div className="mb-2 sm:mb-2">
@@ -725,7 +633,6 @@ export default function Luxary() {
     <div className="resume-container font-sans print:p-0 w-full">
       {/* Hidden content for measuring element heights */}
       <div
-        ref={contentRef}
         className="absolute -top-[9999px] -left-[9999px] w-[210mm] pointer-events-none"
       >
         {elements.map((element) => (
@@ -735,35 +642,15 @@ export default function Luxary() {
         ))}
       </div>
 
-      {/* Visible paginated content */}
-      {pageGroups.length > 0 ? (
-        pageGroups.map((page, pageIndex) => (
-          <div
-            key={pageIndex}
-            className={`page print-page bg-white text-gray-800 w-full max-w-[210mm] mx-auto h-[${basePageHeight}px] mb-4 sm:mb-5 shadow-lg print:h-auto print:shadow-none print:page-break-after-always print:mt-0 print:mb-0`}
-          >
-            <div
-              className={`content-wrapper px-4 sm:px-6 md:px-8 py-6 sm:py-8 h-auto overflow-y-auto print:p-0 print:h-auto`}
-              style={{ backgroundColor }}
-            >
-              {page.map((element: any) => (
-                <div key={element.id}>{renderElement(element)}</div>
-              ))}
-            </div>
-          </div>
-        ))
-      ) : (
-        <div
-          className={`page print-page bg-white text-gray-800 w-full max-w-[210mm] mx-auto h-[${basePageHeight}px] mb-4 sm:mb-5 shadow-lg print:h-auto print:shadow-none print:page-break-after-always print:mt-0 print:mb-0`}
-        >
-          <div
-            className={`content-wrapper px-4 sm:px-6 md:px-8 py-6 sm:py-8 h-auto print:p-0 print:h-auto`}
-            style={{ backgroundColor }}
-          >
-            <p className="text-center text-gray-500">Loading content...</p>
-          </div>
-        </div>
-      )}
+      {/* Visible continuous content */}
+      <div
+        className={`content-wrapper h-auto print:p-0 print:h-auto`}
+        style={{ backgroundColor }}
+      >
+        {elements.map((element) => (
+          <div key={element.id}>{renderElement(element)}</div>
+        ))}
+      </div>
     </div>
   );
 }

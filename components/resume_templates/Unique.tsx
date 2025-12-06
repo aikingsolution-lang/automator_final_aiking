@@ -26,26 +26,9 @@ export default function Unique() {
   // Access theme settings
   const { fontSize, lineHeight, primaryColor } = useThemeStore();
 
-  // A4 dimensions in pixels (at 96 DPI for screen, adjusted for print)
-  const basePageWidth = 794; // 210mm
-  const basePageHeight = 1124; // 297mm
-  const paddingTopBottom = 24; // Reduced for smaller screens
-  const paddingLeftRight = 24;
-  const availableContentHeight = basePageHeight - 2 * paddingTopBottom;
-
-  // Refs and state for pagination
-  const contentRef = useRef<HTMLDivElement | null>(null);
-  const [pageGroups, setPageGroups] = useState<unknown[]>([]);
-  const [isMounted, setIsMounted] = useState(false);
-
   // Dynamic font size based on screen size
   const responsiveFontSize = Math.max(fontSize * (window.innerWidth < 640 ? 0.8 : 1), 12);
   const headerFontSize = Math.max(responsiveFontSize - 2, 12);
-
-  // Ensure component is mounted before measuring
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
 
   // Generate all resume elements in the desired order (unchanged)
   const generateElements = () => {
@@ -60,7 +43,7 @@ export default function Unique() {
     }
 
     // 2. Work Experience
-   if (experiences.length) {
+    if (experiences.length) {
       elements.push({ id: "experience-header", type: "section-header", section: "WORK EXPERIENCE" });
       experiences.forEach((exp, index) => {
         elements.push({
@@ -181,84 +164,6 @@ export default function Unique() {
     skills,
   ]);
 
-  // Pagination logic (unchanged)
-  useEffect(() => {
-    if (!isMounted || !contentRef.current) return;
-
-    const pageHeight = availableContentHeight;
-    const pageGroupsTemp = [];
-    let currentPage = [];
-    let currentHeight = 0;
-    let i = 0;
-
-    const measureElementHeight = (element) => {
-      const elementNode = contentRef.current?.querySelector(`#${element.id}`);
-      return elementNode?.scrollHeight || 50; // Default to 50px if height is 0
-    };
-
-    while (i < elements.length) {
-      const element = elements[i];
-      const elementHeight = measureElementHeight(element);
-
-      if (elementHeight === 0) {
-        console.warn(`Element ${element.id} has zero height, skipping`);
-        i++;
-        continue;
-      }
-
-      if (element.type === "experience-header") {
-        let nextDescHeight = 0;
-        if (i + 1 < elements.length && elements[i + 1].type === "experience-desc") {
-          nextDescHeight = measureElementHeight(elements[i + 1]);
-        }
-        const totalHeight = elementHeight + nextDescHeight;
-        if (currentHeight + totalHeight > pageHeight && currentPage.length > 0) {
-          pageGroupsTemp.push(currentPage);
-          currentPage = [];
-          currentHeight = 0;
-        }
-        currentPage.push(element);
-        currentHeight += elementHeight;
-        i++;
-        while (i < elements.length && elements[i].type === "experience-desc") {
-          const descHeight = measureElementHeight(elements[i]);
-          if (currentHeight + descHeight > pageHeight) {
-            break;
-          }
-          currentPage.push(elements[i]);
-          currentHeight += descHeight;
-          i++;
-        }
-      } else {
-        if (currentHeight + elementHeight > pageHeight && currentPage.length > 0) {
-          pageGroupsTemp.push(currentPage);
-          currentPage = [];
-          currentHeight = 0;
-        }
-        currentPage.push(element);
-        currentHeight += elementHeight;
-        i++;
-      }
-    }
-
-    if (currentPage.length > 0) {
-      pageGroupsTemp.push(currentPage);
-    }
-
-    setPageGroups(pageGroupsTemp);
-  }, [
-    personalData,
-    certificates,
-    achievements,
-    experiences,
-    educations,
-    projects,
-    languages,
-    skills,
-    isMounted,
-    elements,
-  ]);
-
   // Render individual resume elements
   const renderElement = (element: any) => {
     const isSectionHeader = element.type === "section-header";
@@ -273,10 +178,10 @@ export default function Unique() {
 
     const sectionHeaderStyle = isTargetSection
       ? {
-          fontSize: `${headerFontSize}px`,
-          lineHeight: lineHeight,
-          borderColor: primaryColor,
-        }
+        fontSize: `${headerFontSize}px`,
+        lineHeight: lineHeight,
+        borderColor: primaryColor,
+      }
       : {};
     const nameFontSize = responsiveFontSize + 4; // Slightly larger for name
 
@@ -350,14 +255,14 @@ export default function Unique() {
                       strokeWidth="2"
                     />
                   </svg>
-                   <a
-                      href={`${element.data.twitter}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline font-medium"
-                    >
-                      {element.data.twitter}
-                    </a>
+                  <a
+                    href={`${element.data.twitter}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    {element.data.twitter}
+                  </a>
                 </div>
               )}
               {element.data.address && (
@@ -408,13 +313,13 @@ export default function Unique() {
                     <path d="M53.57,57,58,52.56l-8-8,4.55-2.91a.38.38,0,0,0-.12-.7L39.14,37.37a.39.39,0,0,0-.46.46L42,53.41a.39.39,0,0,0,.71.13L45.57,49Z" />
                   </svg>
                   <a
-                      href={`${element.data.website}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline font-medium"
-                    >
-                      {element.data.website}
-                    </a>
+                    href={`${element.data.website}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    {element.data.website}
+                  </a>
                 </div>
               )}
               {element.data.linkedin && (
@@ -430,14 +335,14 @@ export default function Unique() {
                     <rect x="2" y="9" width="4" height="12" />
                     <circle cx="4" cy="4" r="2" />
                   </svg>
-                   <a
-                      href={`${element.data.linkedin}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline font-medium"
-                    >
-                      {element.data.linkedin}
-                    </a>
+                  <a
+                    href={`${element.data.linkedin}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    {element.data.linkedin}
+                  </a>
                 </div>
               )}
               {element.data.github && (
@@ -450,13 +355,13 @@ export default function Unique() {
                     <path d="M12 0C5.37 0 0 5.373 0 12c0 5.303 3.438 9.8 8.205 11.387.6.113.82-.258.82-.577v-2.234c-3.338.726-4.033-1.415-4.033-1.415-.546-1.388-1.333-1.758-1.333-1.758-1.089-.745.082-.729.082-.729 1.205.084 1.84 1.237 1.84 1.237 1.07 1.834 2.809 1.304 3.495.996.108-.775.418-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.933 0-1.311.467-2.382 1.235-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.3 1.23a11.513 11.513 0 013.003-.404c1.02.005 2.047.138 3.003.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.119 3.176.77.84 1.233 1.911 1.233 3.221 0 4.61-2.807 5.625-5.48 5.922.43.372.814 1.102.814 2.222v3.293c0 .322.218.694.825.576C20.565 21.796 24 17.298 24 12c0-6.627-5.373-12-12-12z" />
                   </svg>
                   <a
-                      href={`${element.data.github}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline font-medium"
-                    >
-                      {element.data.github}
-                    </a>
+                    href={`${element.data.github}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    {element.data.github}
+                  </a>
                 </div>
               )}
             </div>
@@ -493,35 +398,34 @@ export default function Unique() {
           </div>
         );
       case "experience-desc":
-  // Return null if description is undefined or empty
-  if (!element.data.description || element.data.description.trim().length === 0) {
-    return null;
-  }
+        // Return null if description is undefined or empty
+        if (!element.data.description || element.data.description.trim().length === 0) {
+          return null;
+        }
 
-  // Protect ".js" by replacing the period with a placeholder
-  const sentences = element.data.description
-    .replace(
-      /(\b(?:Express|React|Node)\.js\b)/g,
-      (match : any) => match.replace(".", "[DOT]")
-    )
-    .split(/\.\s+(?=[A-Z])/) // Split on ". " followed by a capital letter
-    .map((sentence: string) =>
-      sentence
-        .replace(/\[DOT\]/g, ".") // Restore ".js"
-        .trim()
-    )
-    .filter((sentence: string) => sentence.length > 0);
+        const sentences = element.data.description
+          .replace(
+            /(\b(?:Express|React|Node)\.js\b)/g,
+            (match: string) => match.replace(".", "[DOT]")
+          )
+          .split(/\.\s+(?=[A-Z])/)
+          .map((sentence: string) =>
+            sentence
+              .replace(/\[DOT\]/g, ".")
+              .trim()
+          )
+          .filter((sentence: string) => sentence.length > 0);
 
-  return (
-    <ul className="list-disc ml-4 sm:ml-6 text-xs sm:text-sm text-gray-700 mb-3 sm:mb-4 leading-relaxed">
-      {sentences.map((detail: string, i: number) => (
-        <li key={`experience-${element.data.parentId}-desc-${i}`}>
-          {detail}
-          {i < sentences.length - 1 && detail.endsWith(".") ? "" : "."}
-        </li>
-      ))}
-    </ul>
-  );
+        return (
+          <ul className="list-disc ml-4 sm:ml-6 text-xs sm:text-sm text-gray-700 mb-3 sm:mb-4 leading-relaxed">
+            {sentences.map((detail: string, i: number) => (
+              <li key={`experience-${element.data.parentId}-desc-${i}`}>
+                {detail}
+                {i < sentences.length - 1 && detail.endsWith(".") ? "" : "."}
+              </li>
+            ))}
+          </ul>
+        );
       case "project-header":
         return (
           <div className="mb-2">
@@ -619,10 +523,9 @@ export default function Unique() {
   };
 
   return (
-    <div className="resume-container font-sans print:p-0 w-full">
+    <div className="resume-container font-sans print:p-0 w-full bg-white">
       {/* Hidden content for measuring element heights */}
       <div
-        ref={contentRef}
         className="absolute -top-[9999px] -left-[9999px] w-[210mm] pointer-events-none"
       >
         {elements.map((element) => (
@@ -632,35 +535,14 @@ export default function Unique() {
         ))}
       </div>
 
-      {/* Visible paginated content */}
-      {pageGroups.length > 0 ? (
-        pageGroups.map((page, pageIndex) => (
-          <div
-            key={pageIndex}
-            className={`page print-page bg-white text-gray-800 w-full max-w-[210mm] mx-auto h-[${basePageHeight}px] mb-4 sm:mb-5 shadow-lg print:h-auto print:shadow-none print:page-break-after-always print:mt-0 print:mb-0`}
-          >
-            <div
-              className={`content-wrapper px-4 sm:px-6 md:px-8 py-6 sm:py-8 h-auto overflow-y-auto print:p-0 print:h-auto`}
-            >
-              {page.map((element: any, index: number) => (
-                <div key={element.id}>
-                  {renderElement(element)}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))
-      ) : (
-        <div
-          className={`page print-page bg-white text-gray-800 w-full max-w-[210mm] mx-auto h-[${basePageHeight}px] mb-4 sm:mb-5 shadow-lg print:h-auto print:shadow-none print:page-break-after-always print:mt-0 print:mb-0`}
-        >
-          <div
-            className={`content-wrapper px-4 sm:px-6 md:px-8 py-6 sm:py-8 h-auto print:p-0 print:h-auto`}
-          >
-            <p className="text-center text-gray-500">Loading content...</p>
-          </div>
-        </div>
-      )}
+      {/* Visible continuous content */}
+      <div
+        className={`content-wrapper h-auto print:p-0 print:h-auto bg-white`}
+      >
+        {elements.map((element) => (
+          <div key={element.id}>{renderElement(element)}</div>
+        ))}
+      </div>
     </div>
   );
 }
