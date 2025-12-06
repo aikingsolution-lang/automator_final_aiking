@@ -1,15 +1,30 @@
 "use client";
-import React, { useRef, useEffect, useState } from "react";
+import React, {
+  useRef,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import LeftSidebar from "@/components/left/LeftSidebar";
 import Resume from "@/components/resume_templates/bonzor";
 import Rightsidebar from "@/components/right/Rightsidebar";
-import { useReactToPrint } from "react-to-print";
 import { ref, getDatabase, get } from "firebase/database";
 import { getAuth } from "firebase/auth";
 import app from "@/firebase/config";
-import fillResumeData from "../../../components/oneclick/page"; // Import the function
+import fillResumeData from "@/components/oneclick/page";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { useThemeStore } from "@/app/store";
+import {
+  useAchievementStore,
+  useCertificateStore,
+  useEducationStore,
+  useExperienceStore,
+  useLanguageStore,
+  usePersonalDataStore,
+  useProjectStore,
+  useSkillStore,
+  useThemeStore,
+} from "@/app/store";
 import Luxary from "@/components/resume_templates/luxary";
 import Unique from "@/components/resume_templates/Unique";
 import Classic from "@/components/resume_templates/Classic";
@@ -17,150 +32,180 @@ import { HiMenu, HiX } from "react-icons/hi";
 import { fetchUserDetails } from "@/components/fetch_user_details/page";
 import { toast } from "react-toastify";
 
+// ---- pdf.js
+import * as pdfjsLib from "pdfjs-dist";
+import "pdfjs-dist/build/pdf.worker.min.js";
+import Celibi from "@/components/resume_templates/Celibi";
+import Modern from "@/components/resume_templates/modern";
+import Glalie from "@/components/resume_templates/glalie";
+import Pikachu from "@/components/resume_templates/pikachu";
+
+(pdfjsLib as any).GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${(pdfjsLib as any).version
+  }/pdf.worker.min.js`;
+
+const db = getDatabase(app);
+
 const CreateResume: React.FC = () => {
-  const contentRef = useRef<HTMLDivElement>(null);
+  // ===== refs
+  const resumeRef = useRef<HTMLDivElement>(null);
+  const lastPdfBlobRef = useRef<Blob | null>(null);
+
   const [uid, setUid] = useState<string | null>(null);
+
+  // ===== data state
   const [resumeData, setResumeData] = useState<unknown>(null);
   const [apiKey, setApiKey] = useState("");
   const [job_description, setJD] = useState<string | null>(null);
+  const [previous_resume_data, setRD] = useState<string | null>(null);
+
+  // ===== UI state
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
-  const [previous_resume_data, setRD] = useState<string | null>(null);
-  const { selectedTemplate } = useThemeStore(); // Get selected template from store
+  const [downloading, setDownloading] = useState(false);
+  const [rendering, setRendering] = useState(false);
+  const [pageImages, setPageImages] = useState<string[]>([]);
+  const [needsPreview, setNeedsPreview] = useState(true);
 
-  const db = getDatabase(app);
-  console.log(uid, "uid");
-  const datapath = ref(db, "user/" + uid + "/" + "resume_data/" + "newData/");
+  const { selectedTemplate, ...theme } = useThemeStore();
+  const { skills } = useSkillStore();
+  const { projects } = useProjectStore();
+  const { languages } = useLanguageStore();
+  const { experiences } = useExperienceStore();
+  const { educations } = useEducationStore();
+  const { certificates } = useCertificateStore();
+  const { achievements } = useAchievementStore();
+  const { personalData } = usePersonalDataStore();
 
-  // In CreateResume.tsx
-  const templateComponents: Record<string, React.FC> = {
-    bonzor: Resume,
-    luxary: Luxary,
-    unique: Unique,
-    classic: Classic,
-  };
+  const datapath = useMemo(
+    () => (uid ? ref(db, `user/${uid}/resume_data/newData/`) : null),
+    [uid]
+  );
 
-  // Fix the selected template logic
-  const SelectedTemplateComponent =
-    templateComponents[selectedTemplate.toLowerCase()] || Resume;
+  // ===== templates
+  const templates: Record<string, React.FC> = useMemo(
+    () => ({
+      bonzor: Resume,
+      luxary: Luxary,
+      unique: Unique,
+      classic: Classic,
+      celibi: Celibi,
+      modern: Modern,
+      glalie: Glalie,
+      pikachu: Pikachu,
+    }),
+    []
+  );
 
-  useEffect(() => {
-    const fetchDataAsync = async () => {
-      try {
-        const snapshot = await get(datapath);
-        if (snapshot.exists()) {
-          console.log("Retrieved Data:", snapshot.val());
-        } else {
-          console.log("No data available");
-        }
-      } catch (error) {
-        console.error("Error retrieving data:", error);
-      }
-    };
+  const SelectedTemplateComponent = useMemo(() => {
+    const key = (selectedTemplate || "bonzor").toLowerCase();
+    return templates[key] || Resume;
+  }, [selectedTemplate, templates]);
 
-    fetchDataAsync();
-  });
-
+  // ===== auth/bootstrap
   useEffect(() => {
     const auth = getAuth();
     setUid(auth.currentUser ? auth.currentUser.uid : null);
-  }, [])
+  }, []);
 
   useEffect(() => {
-    const fetchData = async function () {
-      let api_key = localStorage.getItem("api_key");
-      const userData = await fetchUserDetails(uid);
+    const init = async () => {
+      try {
+        let api_key = localStorage.getItem("api_key");
+        if (uid) {
+          const userData = await fetchUserDetails(uid);
+          if (userData) {
+            const { apiKey: storedKey, rd } = userData;
 
-      if (userData) {
-        const { apiKey, urd, rd } = userData;
+            if (storedKey === "API_KEY_NOT_FOUND") {
+              toast.error("Please Upload Your Gemini Key!");
+              setTimeout(() => (window.location.href = "/gemini"), 1500);
+              return;
+            }
+            if (rd === "RD_DATA_NOT_FOUND") {
+              toast.error("Please Upload Your Resume!");
+              setTimeout(() => (window.location.href = "/resume2"), 1500);
+              return;
+            }
 
-        if (apiKey === "API_KEY_NOT_FOUND") {
-          toast.error("Please Upload Your Gemini Key!");
-          setTimeout(() => {
-            window.location.href = "/gemini";
-          }, 2000);
-          return; // important! stop further execution
-        }
-
-        if (rd === "RD_DATA_NOT_FOUND") {
-          toast.error("Please Upload Your Resume!");
-          setTimeout(() => {
-            window.location.href = "/resume2";
-          }, 2000);
-          return; // important! stop further execution
-        }
-
-        api_key = apiKey;
-        setApiKey(api_key);
-        localStorage.setItem("api_key", apiKey);
-      }
-
-      const JD = localStorage.getItem("jobDescription");
-      const RD = localStorage.getItem("resumeText");
-      setJD(JD);
-      setRD(RD);
-      if (!api_key) {
-        console.error("API Key is missing in localStorage!");
-        return;
-      }
-      console.log(api_key);
-      setApiKey(api_key);
-    }
-    fetchData()
-  }, [uid]);
-
-  const geminiClient = new GoogleGenerativeAI(apiKey);
-
-
-  async function analyzeResumeForSkill() {
-    // console.log("from analyzer",);
-
-    const prompt = `You are an AI that generates structured resume data in JSON format. Below, I will provide previous resume data and a job description. Your task is to carefully analyze both, understand the job requirements, and update the resume while ensuring that all fields remain correctly structured with relevent keywords from job discription.
-
- Instructions:
-1. Retain personal details exactly as they are without any modifications add relevent keywords from job discription.
-2. Modify the 'skills' section to align with the job description while maintaining the structure. Ensure that all skills are grouped under relevant headings and formatted as in the example JSON.
-3. Update the 'experiences' section by emphasizing responsibilities and achievements relevant to the job description. Retain the same structure and formatting.
-4. Preserve the JSON structure exactly as shown in the example, ensuring that key names remain unchanged.
-5. Ensure uniformity in field values (e.g., the format of dates, lists, objects) so that the modified resume is consistent with the example structure.
-
- Input Data:
-Previous Resume Data:
-${previous_resume_data}
-
-Job Description:
-${job_description}
-
- Output Format:
-Return the updated resume in JSON format ensuring all key names, structures, and data formats are identical to the following example:
-
-\ \ \json
-      {
-        "personalData": {
-          "name": "John Doe",
-            "headline": "Software Developer",
-              "summary": "Experienced in web development",
-                "profile": "profile-url",
-                  "address": "123 Main St, City",
-                    "phone": "1234567890",
-                      "email": "john@example.com",
-                        "skill": "React, Node.js",
-                          "hobbie": "Reading, Coding",
-                            "language": "English, French",
-                              "twitter": "john_twitter",
-                                "linkedin": "john_linkedin",
-                                  "github": "john_github",
-                                    "location": "City, Country",
-                                      "website": "www.johndoe.com"
-        },
-        "projects": [
-          {
-            "name": "Portfolio Website",
-            "description": "Personal website",
-            "date": "2023",
-            "website": "www.portfolio.com"
+            api_key = storedKey;
+            setApiKey(api_key);
+            localStorage.setItem("api_key", storedKey);
           }
-        ],
+        }
+
+        const JD = localStorage.getItem("jobDescription");
+        const RD = localStorage.getItem("resumeText");
+        setJD(JD);
+        setRD(RD);
+
+        if (datapath) {
+          try {
+            await get(datapath);
+          } catch {
+            // ignore warmup errors
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    init();
+  }, [uid, datapath]);
+
+  // ===== Gemini
+  const geminiClient = useMemo(
+    () => new GoogleGenerativeAI(apiKey),
+    [apiKey]
+  );
+
+  const analyzeResumeForSkill = useCallback(async () => {
+    const prompt = `
+      You are an AI that generates structured resume data in JSON format. Below, I will provide previous resume data and a job description. Your task is to carefully analyze both, understand the job requirements, and update the resume while ensuring that all fields remain correctly structured with relevent keywords from job discription.
+
+      Instructions:
+        1. Retain personal details exactly as they are without any modifications add relevent keywords from job discription.
+        2. Modify the 'skills' section to align with the job description while maintaining the structure. Ensure that all skills are grouped under relevant headings and formatted as in the example JSON.
+        3. Update the 'experiences' section by emphasizing responsibilities and achievements relevant to the job description. Retain the same structure and formatting.
+        4. Preserve the JSON structure exactly as shown in the example, ensuring that key names remain unchanged.
+        5. Ensure uniformity in field values (e.g., the format of dates, lists, objects) so that the modified resume is consistent with the example structure.
+
+      Input Data:
+        Previous Resume Data:
+          ${previous_resume_data}
+
+        Job Description:
+          ${job_description}
+
+      Output Format:
+        Return the updated resume in JSON format ensuring all key names, structures, and data formats are identical to the following example:
+
+      \`\`\`json
+        {
+          "personalData": {
+            "name": "John Doe",
+            "headline": "Software Developer",
+            "summary": "Experienced in web development",
+            "profile": "profile-url",
+            "address": "123 Main St, City",
+            "phone": "1234567890",
+            "email": "john@example.com",
+            "skill": "React, Node.js",
+            "hobbie": "Reading, Coding",
+            "language": "English, French",
+            "twitter": "john_twitter",
+            "linkedin": "john_linkedin",
+            "github": "john_github",
+            "location": "City, Country",
+            "website": "www.johndoe.com"
+          },
+          "projects": [
+            {
+              "name": "Portfolio Website",
+              "description": "Personal website",
+              "date": "2023",
+              "website": "www.portfolio.com"
+            }
+          ],
           "educations": [
             {
               "institute": "XYZ University",
@@ -170,186 +215,300 @@ Return the updated resume in JSON format ensuring all key names, structures, and
               "score": "3.8 GPA"
             }
           ],
-            "certificates": [
-              {
-                "title": "AWS Certified",
-                "awarder": "Amazon",
-                "date": "2022",
-                "link": "www.aws.com"
-              }
-            ],
-              "experiences": [
-                {
-                  "company": "Tech Corp",
-                  "position": "Software Engineer",
-                  "dateRange": "2020-2024",
-                  "location": "Remote",
-                  "description": "Developed web applications"
-                }
-              ],
-                "skills": [
-                  {
-                    "heading": "Frontend",
-                    "items": "React, JavaScript"
-                  },
-                  {
-                    "heading": "Backend",
-                    "items": "Node.js, JavaScript, Mongodb"
-                  }
-                ],
-                  "achievements": [
-                    {
-                      "name": "Hackathon Winner",
-                      "details": "Won XYZ Hackathon"
-                    }
-                  ],
-                    "languages": [
-                      {
-                        "heading": "English",
-                        "option": "Fluent"
-                      }
-                    ]
-      }
-                    \ \ \
+          "certificates": [
+            {
+              "title": "AWS Certified",
+              "awarder": "Amazon",
+              "date": "2022",
+              "link": "www.aws.com"
+            }
+          ],
+          "experiences": [
+            {
+              "company": "Tech Corp",
+              "position": "Software Engineer",
+              "dateRange": "2020-2024",
+              "location": "Remote",
+              "description": "Developed web applications"
+            }
+          ],
+          "skills": [
+            {
+              "heading": "Frontend",
+              "items": "React, JavaScript"
+            },
+            {
+              "heading": "Backend",
+              "items": "Node.js, JavaScript, Mongodb"
+            }
+          ],
+          "achievements": [
+            {
+              "name": "Hackathon Winner",
+              "details": "Won XYZ Hackathon"
+            }
+          ],
+          "languages": [
+            {
+              "heading": "English",
+              "option": "Fluent"
+            }
+          ]
+        }
+      \`\`\`
       `;
 
     try {
       const model = geminiClient.getGenerativeModel({
         model: "gemini-2.0-flash",
       });
+
       const response = await model.generateContent(prompt);
       const textResponse =
-        response?.response?.candidates[0]?.content?.parts[0]?.text;
+        response?.response?.candidates?.[0]?.content?.parts?.[0]?.text || null;
 
-      if (!textResponse) {
-        return { message: "Empty response from Gemini API." };
-      }
-      console.log("response", textResponse);
+      if (!textResponse) return { message: "Empty response from Gemini API." };
 
-      const regex = /```json([\s\S]*?)```/;
-      const match = textResponse.match(regex);
+      const match = textResponse.match(/```json([\s\S]*?)```/);
+      if (!match)
+        return { message: "No valid JSON output found in Gemini API response." };
 
-      if (!match) {
-        return {
-          message: "No valid JSON output found in Gemini API response.",
-        };
-      }
-      console.log("match", match[1]);
       const parsedJSON = JSON.parse(match[1]);
       setResumeData(parsedJSON);
       return parsedJSON;
     } catch (error) {
-      console.error("Error processing Gemini API response:", error);
-      return {
-        message: "Failed to process Gemini API response.",
-        error: error.message,
-      };
+      console.error("Gemini error:", error);
+      return { message: "Failed to process Gemini API response." };
     }
-  }
+  }, [geminiClient, job_description, previous_resume_data]);
 
   useEffect(() => {
-
-
-
-
+    if (!job_description || !previous_resume_data || !apiKey) return;
     analyzeResumeForSkill();
-    // setResumeData(sampleData);
-    // fillResumeData(sampleData)
-  }, [job_description, previous_resume_data, apiKey]);
-
-  useEffect(() => {
-    let isInitialized = false;
-
-    const initializeData = async () => {
-      if (isInitialized || !apiKey || !job_description || !previous_resume_data)
-        return;
-
-      console.log("Initializing resume data with:", {
-        apiKey,
-        job_description,
-        previous_resume_data,
-      });
-      isInitialized = true;
-      const result = await analyzeResumeForSkill();
-      if (result && typeof result !== "string" && !("message" in result)) {
-        setResumeData(result);
-      } else {
-        console.error("Failed to process resume data:", result);
-      }
-    };
-
-    initializeData();
-  }, [apiKey, job_description, previous_resume_data]);
+  }, [job_description, previous_resume_data, apiKey, analyzeResumeForSkill]);
 
   useEffect(() => {
     if (resumeData) {
-      console.log("Final Resume Data set:", resumeData);
       fillResumeData(resumeData);
-    }
-  }, [resumeData]);
-  const handlePrint = useReactToPrint({
-    contentRef,
-    pageStyle: `@page {
-      size: 265mm 406mm;
-      margin: 20mm 10mm 10mm 20mm !important;
-    }
-
-    @media print {
-      /* Ensure print color accuracy */
-      * {
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-      } 
-      /* Hide unwanted elements */
-      header, footer {
-        display: none !important;
+      try {
+        localStorage.setItem("resumeData", JSON.stringify(resumeData));
+      } catch {
+        // ignore localStorage errors
       }
     }
-    /* Prevent margin collapsing */
-    .page {
-      overflow: hidden;
-    }`
-  });
+  }, [resumeData]);
 
-  const toggleSidebar = (sidebar: "left" | "right") => {
-    if (sidebar === "left") {
-      setIsLeftSidebarOpen(!isLeftSidebarOpen);
-      setIsRightSidebarOpen(false); // Always close right when toggling left
+  useEffect(() => {
+    setNeedsPreview(true);
+  }, [
+    personalData,
+    skills,
+    projects,
+    languages,
+    experiences,
+    educations,
+    certificates,
+    achievements,
+    theme.backgroundColor,
+    theme.primaryColor,
+    theme.selectedFont,
+    theme.fontWeight,
+    theme.fontStyle,
+    theme.fontSize,
+    theme.lineHeight,
+    theme.hideIcons,
+    theme.underlineLinks,
+  ]);
+
+  // ===== Build HTML snapshot (resume only) with CSS links from hidden DOM
+  const buildHtmlForPdf = useCallback(() => {
+    const node = resumeRef.current;
+    if (!node) return null;
+
+    const links = Array.from(
+      document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')
+    )
+      .map((l) => {
+        const href = l.getAttribute("href");
+        if (!href) return null;
+
+        const absolute = href.startsWith("http")
+          ? href
+          : `${window.location.origin}${href}`;
+        return `<link rel="stylesheet" href="${absolute}" />`;
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    const styles = Array.from(
+      document.querySelectorAll<HTMLStyleElement>("head style")
+    )
+      .map((s) => `<style>${s.innerHTML}</style>`)
+      .join("\n");
+
+    const body = `
+      <div id="resume-root" style="width:210mm; padding:3mm; background:#ffffff;">
+        ${node.innerHTML}
+      </div>
+    `;
+
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8"/>
+          <meta name="viewport" content="width=device-width, initial-scale=1"/>
+          ${links}
+          ${styles}
+          <style>
+            @page { size: A4; margin: 3mm; }
+            html, body { margin:0; padding:0; background:#ffffff; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page-break { page-break-after: always; }
+          </style>
+        </head>
+        <body>${body}</body>
+      </html>
+    `;
+    return html;
+  }, []);
+
+  // ===== PDF -> images (one per page)
+  const pdfBlobToImages = useCallback(async (blob: Blob, scale = 2) => {
+    const arrayBuffer = await blob.arrayBuffer();
+    const pdf = await (pdfjsLib as any).getDocument({ data: arrayBuffer })
+      .promise;
+
+    const images: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale });
+
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) continue;
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      const imgData = canvas.toDataURL("image/png");
+      images.push(imgData);
+    }
+    return images;
+  }, []);
+
+  // ===== Regenerate preview: build HTML -> API -> Blob -> images
+  const regeneratePreview = useCallback(async () => {
+    const html = buildHtmlForPdf();
+    if (!html || html.trim().length < 50) return;
+
+    setRendering(true);
+    try {
+      const res = await fetch("/api/generate-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ html }),
+      });
+
+      if (!res.ok) throw new Error("Failed to generate PDF");
+
+      const blob = await res.blob();
+      lastPdfBlobRef.current = blob;
+
+      const imgs = await pdfBlobToImages(blob, 2);
+      setPageImages(imgs);
+
+      setNeedsPreview(false);
+    } catch (e) {
+      console.error("Preview generation failed:", e);
+      toast.error("Failed to render preview.");
+    } finally {
+      setRendering(false);
+    }
+  }, [buildHtmlForPdf, pdfBlobToImages]);
+
+  // Debounced auto-update on data/template changes
+  useEffect(() => {
+    if (!resumeData || !selectedTemplate) return;
+
+    const t = setTimeout(() => {
+      regeneratePreview();
+    }, 500);
+
+    return () => clearTimeout(t);
+  }, [resumeData, selectedTemplate, regeneratePreview]);
+
+  // ===== Download PDF (use latest blob if available, otherwise regenerate now)
+  const handleDownload = useCallback(async () => {
+    try {
+      setDownloading(true);
+
+      if (needsPreview) {
+        await regeneratePreview();
+      }
+
+      if (lastPdfBlobRef.current) {
+        const url = URL.createObjectURL(lastPdfBlobRef.current);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "resume.pdf";
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("PDF generation failed.");
+    } finally {
+      setDownloading(false);
+    }
+  }, [needsPreview, regeneratePreview]);
+
+  // ===== toggles
+  const toggleSidebar = (side: "left" | "right") => {
+    if (side === "left") {
+      setIsLeftSidebarOpen((v) => !v);
+      setIsRightSidebarOpen(false);
     } else {
-      setIsRightSidebarOpen(!isRightSidebarOpen);
-      setIsLeftSidebarOpen(false); // Always close left when toggling right
+      setIsRightSidebarOpen((v) => !v);
+      setIsLeftSidebarOpen(false);
     }
   };
 
   return (
     <>
+      {needsPreview && resumeData && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+          <button
+            onClick={regeneratePreview}
+            disabled={rendering}
+            className="w-full inline-flex items-center justify-center px-6 py-3 mb-3 text-sm sm:text-base font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-60"
+          >
+            {rendering ? "Updating Preview…" : "🔁 Generate Preview"}
+          </button>
+        </div>
+      )}
+
       {resumeData ? (
-        <div className="relative flex flex-col lg:flex-row h-screen sm:max-h-full overflow-hidden">
-          {/* Hamburger Menu for Mobile */}
-          <div className="lg:hidden flex justify-between p-4 bg-[#0F011E] border-b border-gray-700 fixed w-full top-0 z-50">
+        <div className="relative flex flex-col lg:flex-row h-screen overflow-hidden">
+          {/* Mobile bar */}
+          <div className="lg:hidden flex justify-between p-4 bg-[#0F011E] fixed w-full top-0 z-40">
             <button
               onClick={() => toggleSidebar("left")}
               className="text-white text-2xl"
-              aria-label={
-                isLeftSidebarOpen ? "Close Left Sidebar" : "Open Left Sidebar"
-              }
             >
               {isLeftSidebarOpen ? <HiX /> : <HiMenu />}
             </button>
             <button
               onClick={() => toggleSidebar("right")}
               className="text-white text-2xl"
-              aria-label={
-                isRightSidebarOpen
-                  ? "Close Right Sidebar"
-                  : "Open Right Sidebar"
-              }
             >
               {isRightSidebarOpen ? <HiX /> : <HiMenu />}
             </button>
           </div>
 
-          {/* Backdrop for Mobile Sidebars */}
+          {/* overlay */}
           {(isLeftSidebarOpen || isRightSidebarOpen) && (
             <div
               className="lg:hidden fixed inset-0 bg-black/50 z-30"
@@ -360,41 +519,78 @@ Return the updated resume in JSON format ensuring all key names, structures, and
             />
           )}
 
-          {/* Left Sidebar */}
+          {/* Left */}
           <div
-            className={`lg:w-3/12 w-3/4 h-screen scrollbar-hidden print:hidden transition-transform duration-300 ${isLeftSidebarOpen ? "translate-x-0" : "-translate-x-full"
-              } lg:translate-x-0 fixed lg:static bg-[#0F011E] z-40 top-0 pt-16 lg:pt-0 overflow-x-hidden`}
+            className={`md:w-3/4 lg:w-3/12 w-full h-screen transition-transform duration-300 pt-12 lg:pt-0 ${isLeftSidebarOpen ? "translate-x-0" : "-translate-x-full"
+              } lg:translate-x-0 fixed lg:static bg-[#0F011E] z-40`}
           >
             <LeftSidebar />
           </div>
 
-          {/* Main Resume Content */}
-          <div
-            ref={contentRef}
-            className="w-full flex-1 bg-gray-200 overflow-y-auto scrollbar-hidden print:h-auto print:p-0 print:w-[235mm] mx-auto mt-0 lg:mt-0 relative z-10"
-          >
-            <div className="resume-container w-full max-w-[255mm] bg-gray-200 mx-auto min-h-screen print:min-h-0 print:bg-white">
-              <SelectedTemplateComponent
-                key={selectedTemplate}
-                className="mb-0 pb-0 w-full"
-              />
+          {/* Center: PDF page images (A4 width) */}
+          <div className="flex-1 bg-gray-200 overflow-y-auto pb-4 pl-4 sm:pl-6 md:pl-16 lg:pl-4 pr-4 sm:pr-6 md:pr-16 lg:pr-4 pt-16 lg:pt-4">
+            {rendering && (
+              <div className="flex justify-center items-center mb-3 text-gray-700">
+                <div className="animate-spin rounded-full h-6 w-6 border-t-4 border-[#0FAE96]"></div>
+                <span className="ml-2 text-sm">Rendering preview…</span>
+              </div>
+            )}
+
+            <div className="mx-auto">
+              {pageImages.length > 0 ? (
+                pageImages.map((src, i) => (
+                  <img
+                    key={i}
+                    src={src}
+                    alt={`Page ${i + 1}`}
+                    className="bg-white shadow-sm mb-4 block w-full rounded-sm"
+                  />
+                ))
+              ) : (
+                <div className="mx-auto bg-white shadow-sm text-gray-400 flex items-center justify-center p-10">
+                  Preparing resume preview…
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Right Sidebar with Print Button */}
+          {/* Right */}
           <div
-            className={`lg:w-3/12 w-3/4 h-screen scrollbar-hidden print:hidden transition-transform duration-300 ${isRightSidebarOpen ? "translate-x-0" : "translate-x-full"
-              } lg:translate-x-0 fixed lg:static bg-[#0F011E] z-40 top-0 pt-16 lg:pt-0 right-0 overflow-x-hidden`}
+            className={`md:w-3/4 lg:w-3/12 w-full h-screen flex flex-col transition-transform duration-300 pt-12 lg:pt-0 ${isRightSidebarOpen ? "translate-x-0" : "translate-x-full"
+              } lg:translate-x-0 fixed lg:static bg-[#0F011E] z-40 right-0`}
           >
-            <div className="p-4">
+            {/* TOP SECTION — Buttons */}
+            <div className="flex-shrink-0 p-4 border-b border-white/10">
               <button
-                className="w-full inline-flex items-center justify-center px-6 py-3 mb-2 text-sm sm:text-base font-semibold text-white bg-[#0FAE96] rounded-md hover:bg-[#0FAE96]/90 focus:outline-none focus:ring-2 focus:ring-[#0FAE96]/60"
-                onClick={() => handlePrint()}
+                onClick={handleDownload}
+                disabled={downloading}
+                className="w-full inline-flex items-center justify-center px-6 py-3 text-sm sm:text-base font-semibold text-white bg-[#0FAE96] rounded-md hover:bg-[#0FAE96]/90 disabled:opacity-60"
               >
-                🖨️ Print Resume
+                {downloading ? "Generating…" : "💾 Download PDF"}
               </button>
             </div>
-            <Rightsidebar />
+
+            {/* BOTTOM SECTION — Scrollable Tools */}
+            <div className="w-full flex-1 overflow-y-auto">
+              <Rightsidebar />
+            </div>
+          </div>
+
+          {/* Hidden: LIVE resume DOM bound to store (source for HTML snapshot) */}
+          <div className="hidden" aria-hidden="true">
+            <div
+              ref={resumeRef}
+              style={{
+                width: "210mm",
+                minHeight: "297mm",
+                padding: "3mm",
+                background: "#ffffff",
+              }}
+            >
+              <SelectedTemplateComponent
+                key={`hidden-${selectedTemplate || "bonzor"}`}
+              />
+            </div>
           </div>
         </div>
       ) : (

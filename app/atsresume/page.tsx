@@ -11,7 +11,6 @@ import Template from '../../components/ats-resume/Template';
 export default function AtsResume() {
   return (
     <div className="bg-[#11011E]">
-    
       <GetHired />
       <ThreeStepsResume />
       <Template />
