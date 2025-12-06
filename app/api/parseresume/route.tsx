@@ -357,6 +357,7 @@ const parseWithGemini = async (
     }
   } catch (error) {
     console.error('Gemini parsing failed:', (error as Error).message, error);
+    const extractedEmail = extractEmailFromText(text);
     if (error instanceof Error && error.message.includes('safety ratings')) {
       console.error('Gemini blocked content due to safety ratings.');
       return validateCandidate({
