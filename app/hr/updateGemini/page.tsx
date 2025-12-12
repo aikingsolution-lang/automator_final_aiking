@@ -45,7 +45,7 @@ const GeminiPage: React.FC = () => {
     const paymentRef = ref(db, `hr/${userId}/Payment`);
 
     const genAI = new GoogleGenerativeAI(geminiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
     const prompt = "Write a story about an AI and magic";
 
     try {

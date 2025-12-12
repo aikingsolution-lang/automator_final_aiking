@@ -93,8 +93,9 @@ const Page = () => {
                 }, 2000);
               }
             }
-          } catch (err) {
-            console.error("Error fetching user data:", err.message);
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error("Error fetching user data:", message);
             toast.error("Error fetching user data.");
           }
         };
@@ -126,8 +127,9 @@ const Page = () => {
             window.location.href = data.reauthUrl || "/email_auth";
           }, 3000);
         }
-      } catch (err) {
-        console.error("Error checking auth status:", err.message);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("Error checking auth status:", message);
         toast.error("Failed to verify authentication. Please try again.");
       }
     };
@@ -160,8 +162,9 @@ const Page = () => {
             { autoClose: 8000 }
           );
         }
-      } catch (error) {
-        console.error("Error fetching email count:", error.message);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("Error fetching email count:", message);
       }
     };
 
@@ -219,8 +222,9 @@ const Page = () => {
         }
         return false;
       }
-    } catch (err) {
-      console.error("Error sending email:", err.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Error sending email:", message);
       toast.error(`Failed to send email to ${companyEmail}.`);
       return false;
     }
@@ -268,7 +272,7 @@ const Page = () => {
                     \`\`\``;
 
         const genAI = new GoogleGenerativeAI(gemini_key);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
         const response = await model.generateContent(userPrompt);
         const textResponse = await response.response.text();
@@ -278,8 +282,9 @@ const Page = () => {
 
         console.log("✅ Gemini Parsed Response:", jsonOutput);
         setJsonData(jsonOutput);
-      } catch (error) {
-        console.error("❌ Error in fetchGeminiResponse:", error);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("❌ Error in fetchGeminiResponse:", message);
         toast.error("Failed to process resume with Gemini API.");
       }
     };
@@ -304,20 +309,21 @@ const Page = () => {
         const avgExperience =
           validJobs.length > 0
             ? validJobs.reduce((sum, job) => {
-                const [min, max] = job.experience.split("-").map(Number);
-                if (isNaN(min) || isNaN(max)) {
-                  console.warn(`Invalid experience range for job: ${job.jobTitle}, experience: ${job.experience}`);
-                  return sum;
-                }
-                return sum + (min + max) / 2;
-              }, 0) / validJobs.length
+              const [min, max] = job.experience.split("-").map(Number);
+              if (isNaN(min) || isNaN(max)) {
+                console.warn(`Invalid experience range for job: ${job.jobTitle}, experience: ${job.experience}`);
+                return sum;
+              }
+              return sum + (min + max) / 2;
+            }, 0) / validJobs.length
             : 0;
         setExp(avgExperience);
 
         const locations = [...new Set(jsonData.filter((job) => job.location).map((job) => job.location))];
         setLocation(locations);
-      } catch (error) {
-        console.error("Error processing Gemini data:", error.message);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("Error processing Gemini data:", message);
         toast.error("Failed to process job data.");
       }
     };
@@ -338,14 +344,15 @@ const Page = () => {
           window.location.href = "/email_auth";
         }
       })
-      .catch((err) => {
-        console.error("Database Error:", err.message);
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("Database Error:", message);
         toast.error("Error verifying user data.");
       });
   }, [userEmail]);
 
   // Step 9: Handle email data from extension and localStorage
- 
+
   useEffect(() => {
     if (emailLimitReached) return;
 
@@ -360,8 +367,9 @@ const Page = () => {
           .filter((email: string) => email !== "Not found");
         setEmailArray(emails);
         console.log("Loaded companies from localStorage:", parsedCompanies);
-      } catch (err) {
-        console.error("Error parsing stored companies:", err.message);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("Error parsing stored companies:", message);
       }
     }
 
@@ -372,7 +380,7 @@ const Page = () => {
 
       const filteredJobs = jobs.filter((job: any) => job.email !== "Not found");
       // localStorage.setItem("companies", JSON.stringify(filteredJobs));
-       localStorage.setItem("companies", JSON.stringify(filteredJobs));
+      localStorage.setItem("companies", JSON.stringify(filteredJobs));
       setCompanies(filteredJobs);
 
       if (filteredJobs.length > 0) {
@@ -455,8 +463,9 @@ const Page = () => {
           setIsSending(false);
           setIsSent(true);
         }
-      } catch (err) {
-        console.error("Error sending emails:", err.message);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("Error sending emails:", message);
         toast.error("Failed to send emails.");
         setIsSending(false);
         setIsSent(true);

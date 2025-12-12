@@ -260,7 +260,7 @@ const CreateResume: React.FC = () => {
 
     try {
       const model = geminiClient.getGenerativeModel({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash-lite",
       });
 
       const response = await model.generateContent(prompt);
