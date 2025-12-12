@@ -33,10 +33,10 @@ const LearningTracker: React.FC = () => {
 
     // ==== Load Gemini API key (following your other pages convention) ====
     useEffect(() => {
-        // For this project we use 'geminiApiKey' in localStorage (your analysisService)
-        const keyFromLocal = localStorage.getItem("geminiApiKey");
+        // For this project we use 'api_key' in localStorage (your analysisService)
+        const keyFromLocal = localStorage.getItem("api_key");
         if (!keyFromLocal) {
-            console.warn("No Gemini API key found in localStorage (geminiApiKey).");
+            console.warn("No Gemini API key found in localStorage (api_key).");
         }
         setApiKey(keyFromLocal);
     }, []);
@@ -83,83 +83,69 @@ const LearningTracker: React.FC = () => {
     );
 
     // ==== Gemini: generate breakdown (sub-skills) for a skill ====
-    const generateBreakdownForSkill = useCallback(
-        
-        async (skillName: string): Promise<TrackerItem[]> => {
-            console.log("hello");
-            if (!geminiClient || !apiKey) {
-                console.warn("Gemini client or API key missing, returning fallback subskills.");
-                return [
-                    { title: `Core fundamentals of ${skillName}`, done: false },
-                    { title: `Important concepts in ${skillName}`, done: false },
-                    { title: `Practical applications of ${skillName}`, done: false },
-                ];
-            }
+    const generateBreakdownForAllSkills = useCallback(
+        async (skills: string[]): Promise<TrackerData> => {
+            if (!geminiClient || skills.length === 0) return {};
 
             try {
                 const prompt = `
-You are helping a student understand the skill "${skillName}" for a job interview preparation platform.
+You are helping a student prepare for job interviews.
 
-Break this skill into 6–7 important **sub-skills / sub-topics** that a learner must master before becoming confident in this main skill.
+For EACH skill below, generate 6–7 important sub-skills.
 
-Guidelines:
-- DO NOT give learning steps.
-- DO NOT explain how to learn.
-- ONLY give sub-topics (example: “SQL Joins”, “Async/Await”, “React Hooks”).
-- Each sub-topic must be short, specific, and represent a key area of the skill.
-- Cover fundamentals, core concepts, and practical essentials.
+Rules:
+- ONLY sub-skills
+- Short topic names
+- NO explanations
+- Return ONLY valid JSON
 
-Return ONLY valid JSON in this exact format:
+Skills:
+${skills.map((s) => `- ${s}`).join("\n")}
 
+Return format:
 {
-  "subskills": [
-    "Sub-skill 1",
-    "Sub-skill 2",
-    "Sub-skill 3"
-  ]
+  "Skill Name": ["Subskill 1", "Subskill 2", ...]
 }
-`.trim();
+      `.trim();
 
                 const model = geminiClient.getGenerativeModel({
-                    model: "gemini-2.5-flash-lite"
+                    model: "gemini-2.5-flash-lite",
                 });
 
                 const response = await model.generateContent(prompt);
                 const text =
                     response?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
-                if (!text) throw new Error("Empty response from Gemini");
+                const jsonMatch = text.match(/{[\s\S]*}/);
+                if (!jsonMatch) throw new Error("Invalid Gemini response");
 
-                // Extract JSON
-                const jsonMatch =
-                    text.match(/```json\s*([\s\S]*?)```/i) ||
-                    text.match(/{[\s\S]*}/);
+                const parsed = JSON.parse(jsonMatch[0]);
 
-                if (!jsonMatch) throw new Error("JSON block not found");
+                const result: TrackerData = {};
+                Object.keys(parsed).forEach((skill) => {
+                    result[skill] = parsed[skill].map((t: string) => ({
+                        title: t,
+                        done: false,
+                    }));
+                });
 
-                const jsonStr = jsonMatch[1] || jsonMatch[0];
-                const parsed = JSON.parse(jsonStr);
-
-                if (!Array.isArray(parsed.subskills) || parsed.subskills.length === 0) {
-                    throw new Error("Invalid 'subskills' format from Gemini");
-                }
-
-                return parsed.subskills.map((topic: string) => ({
-                    title: topic,
-                    done: false
-                }));
-
+                return result;
             } catch (err) {
-                console.error(`Error generating subskills for ${skillName}:`, err);
-                return [
-                    { title: `Key topics of ${skillName}`, done: false },
-                    { title: `Important concepts of ${skillName}`, done: false }
-                ];
+                console.error("Gemini error:", err);
+
+                // fallback (quota-safe)
+                const fallback: TrackerData = {};
+                skills.forEach((s) => {
+                    fallback[s] = [
+                        { title: `Core concepts of ${s}`, done: false },
+                        { title: `Important topics in ${s}`, done: false },
+                    ];
+                });
+                return fallback;
             }
         },
-        [geminiClient, apiKey]
+        [geminiClient]
     );
-
 
     // ==== Main effect: load tracker (and call Gemini if needed) ====
     useEffect(() => {
@@ -184,15 +170,15 @@ Return ONLY valid JSON in this exact format:
 
                 // 2. Ensure each missingSkill has breakdown entries
                 let updated = false;
-                for (const skillName of missingSkills) {
-                    const existing = trackerData[skillName];
+                const skillsToGenerate = missingSkills.filter(
+                    (skill) => !trackerData[skill] || !Array.isArray(trackerData[skill])
+                );
 
-                    if (!existing || !Array.isArray(existing) || existing.length === 0) {
-                        // Need to generate
-                        // const breakdown = await generateBreakdownForSkill(skillName);
-                        // trackerData[skillName] = breakdown;
-                        updated = true;
-                    }
+                if (skillsToGenerate.length > 0) {
+                    const generated = await generateBreakdownForAllSkills(skillsToGenerate);
+                    trackerData = { ...trackerData, ...generated };
+
+                    await saveTrackerToFirebase(uid, trackerData);
                 }
 
                 // 3. Optionally remove skills that are no longer missing
@@ -220,7 +206,7 @@ Return ONLY valid JSON in this exact format:
 
         bootstrap();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [auth.currentUser, missingSkills, loadTrackerFromFirebase, saveTrackerToFirebase, generateBreakdownForSkill]);
+    }, [auth.currentUser, missingSkills, loadTrackerFromFirebase, saveTrackerToFirebase, generateBreakdownForAllSkills]);
 
     // ==== Toggle a checklist item ====
     const handleToggleItem = async (skillName: string, index: number) => {
@@ -286,8 +272,7 @@ Return ONLY valid JSON in this exact format:
                     </CardHeader>
                     <CardContent>
                         <p className="text-sm text-[#B6B6B6] font-inter">
-                            No missing skills found. Once new skill gaps are identified, we’ll
-                            generate a step-by-step learning checklist here.
+                            Please wait...
                         </p>
                     </CardContent>
                 </Card>

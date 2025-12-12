@@ -57,13 +57,6 @@ const Dashboard = () => {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    // console.log('Dashboard mounted, learningPath:', JSON.stringify(learningPath, null, 2));
-    // console.log('Dashboard formStep:', state.formStep);
-    // console.log('Dashboard isLoading:', isLoading);
-    // console.log('Current user:', auth.currentUser?.uid || 'None');
-  }, [learningPath, state.formStep, isLoading]);
-
   const handleResetData = async () => {
     // Access resetState from context
     const user = auth.currentUser;
