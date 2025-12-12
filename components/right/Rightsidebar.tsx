@@ -129,7 +129,7 @@ const RightSidebar: React.FC = () => {
     if (typeof window === "undefined") return;
     const subscriptionType = localStorage.getItem("SubscriptionType");
     // Premium if SubscriptionType exists AND is not "FreeTrialStarted"
-    setIsPremiumUser(Boolean(subscriptionType && subscriptionType === "FreeTrialStarted"));
+    setIsPremiumUser(Boolean(subscriptionType && subscriptionType !== "FreeTrialStarted"));
   }, []);
 
   // --- Font loading (single optimized effect)
