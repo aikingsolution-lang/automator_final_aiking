@@ -15,6 +15,7 @@ import app from '@/firebase/config';
 import { toast } from "react-toastify";
 import LearningTracker from "./LearningTracker";
 import SkillBlogs from "./SkillBlogs";
+import SkillQuizList from "./SkillQuizList";
 
 
 const Dashboard = () => {
@@ -25,7 +26,8 @@ const Dashboard = () => {
   const { resetState } = useAppContext();
   const [isPremium, setIsPremium] = useState(false);
   const [checkedPremium, setCheckedPremium] = useState(false);
-  const [activeTab, setActiveTab] = useState<"lectures" | "tracker" | "blog">("lectures");
+  const [activeTab, setActiveTab] = useState<"lectures" | "tracker" | "blog" | "quiz">("lectures");
+
 
 
   useEffect(() => {
@@ -177,6 +179,14 @@ const Dashboard = () => {
               >
                 Blog
               </button>
+
+              <button
+                onClick={() => setActiveTab("quiz")}
+                className={`px-4 py-2 rounded-md text-white font-semibold transition ${activeTab === "quiz" ? "bg-[#0FAE96]" : "bg-[#2A2A2A]"
+                  }`}
+              >
+                Quiz
+              </button>
             </div>
 
             {/* -------- Content Based on Tab -------- */}
@@ -200,6 +210,13 @@ const Dashboard = () => {
               </div>
             )}
 
+            {activeTab === "quiz" && (
+              <div className="space-y-6">
+                <SkillQuizList />
+              </div>
+            )}
+
+
           </div>
 
 
@@ -214,15 +231,6 @@ const Dashboard = () => {
               <Trash2 className="mr-2 h-4 w-4 inline" />
               Reset Data and Re-analyze
             </button>
-          </div>
-          <div className="mb-6">
-            {/* <button
-          className="bg-[#FF6B6B] text-white font-raleway font-semibold text-base px-6 py-2 rounded-md h-10 transition duration-200 hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#FF6B6B]"
-          onClick={handleResetData}
-        >
-          <Trash2 className="mr-2 h-4 w-4 inline" />
-          Reset Data and Re-analyze
-        </button> */}
           </div>
         </div>
       </div>
