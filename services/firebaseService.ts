@@ -1,5 +1,4 @@
 import { getDatabase, ref, set, get, remove } from 'firebase/database';
-import { getAuth } from 'firebase/auth';
 import { AppState } from '@/types/AppContext';
 import { FormStep } from '@/types';
 import app from '@/firebase/config';
