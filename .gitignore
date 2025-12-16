@@ -40,7 +40,6 @@ build/
 
 # npm
 npm-debug.log*
-package-lock.json
 
 # Optional: Ignore compiled output for TypeScript or other transpilers
 out/
