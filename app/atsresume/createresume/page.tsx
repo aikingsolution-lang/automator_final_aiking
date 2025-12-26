@@ -509,7 +509,7 @@ const CreateResume: React.FC = () => {
   return (
     <>
       {needsPreview && resumeData && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+        <div className="fixed top-16 lg:top-4 left-1/2 -translate-x-1/2 z-40">
           <button
             onClick={regeneratePreview}
             disabled={rendering}
@@ -523,7 +523,7 @@ const CreateResume: React.FC = () => {
       {resumeData ? (
         <div className="relative flex flex-col lg:flex-row h-screen overflow-hidden">
           {/* Mobile bar */}
-          <div className="lg:hidden flex justify-between p-4 bg-[#0F011E] fixed w-full top-0 z-40">
+          <div className="lg:hidden flex justify-between p-4 bg-[#0F011E] fixed w-full top-0 z-50">
             <button
               onClick={() => toggleSidebar("left")}
               className="text-white text-2xl"
