@@ -6,7 +6,9 @@ import { getDatabase, ref, set, get } from "firebase/database";
 import google from "./igoogle.svg"
 import Image from "next/image";
 import axios from "axios";
+
 function SignInwithGoogle() {
+
   function googleLogin() {
     const provider = new GoogleAuthProvider();
     signInWithPopup(auth, provider).then(async (result) => {
@@ -16,7 +18,6 @@ function SignInwithGoogle() {
       let email = user.email;
       let profilePhoto = user.photoURL
       const db = getDatabase(app)
-
 
       const userRef = ref(db, "user/" + user.uid);
       get(userRef).then(async (snapshot) => {
@@ -30,7 +31,6 @@ function SignInwithGoogle() {
           const apiRef2 = ref(db, `user/${user.uid}/API/apikey`)
           const apiSnapshot1 = await get(apiRef1);
           const apiSnapshot2 = await get(apiRef2)
-
 
           let apiKey = "";
           apiSnapshot1.exists() ? apiKey = apiSnapshot1.val() : apiKey = apiSnapshot2.val()
@@ -49,11 +49,7 @@ function SignInwithGoogle() {
             const user = auth.currentUser;
             console.log(user, "user value");
 
-
-
             if (user) {
-
-
               // Reference for Subscription status and Form status
               const getSubscription = ref(db, `user/${auth?.currentUser?.uid}/Payment/SubscriptionType`);
               const subscriptionSnapshot = await get(getSubscription)
@@ -86,13 +82,10 @@ function SignInwithGoogle() {
               }
             }
 
-
           } catch (error) {
             console.error("Login error:", error.message);
             toast.error(error.message, { position: "bottom-center" });
           }
-
-
 
         }
         else {
@@ -102,8 +95,6 @@ function SignInwithGoogle() {
             name: name,
             email: email,
             profilePhoto: profilePhoto
-
-
           }).then(async () => {
             await axios.post("https://us-central1-jobform-automator-website.cloudfunctions.net/welcomeEmailHR/send-email", {
               email: email,
@@ -113,7 +104,6 @@ function SignInwithGoogle() {
             }).catch((err) => {
               toast.error(err.message)
             });
-
 
             // setMessage("Login successful! Welcome email sent.");
             toast.success("Registered!", {
@@ -125,7 +115,6 @@ function SignInwithGoogle() {
             const apiRef2 = ref(db, `user/${user.uid}/API/apikey`)
             const apiSnapshot1 = await get(apiRef1);
             const apiSnapshot2 = await get(apiRef2)
-
 
             let apiKey = "";
             apiSnapshot1.exists() ? apiKey = apiSnapshot1.val() : apiKey = apiSnapshot2.val()
@@ -147,13 +136,11 @@ function SignInwithGoogle() {
 
               if (user) {
 
-
                 // Reference for Subscription status and Form status
                 const getSubscription = ref(db, `user/${auth?.currentUser?.uid}/Payment/SubscriptionType`);
                 const subscriptionSnapshot = await get(getSubscription)
                 const getForm = ref(db, `user/${auth?.currentUser?.uid}/forms`);
                 const formSnapshot = await get(getForm)
-
 
                 const subscriptionType = subscriptionSnapshot.val();
                 //**Event listener */
@@ -164,7 +151,6 @@ function SignInwithGoogle() {
                 }
                 console.log(auth.currentUser.uid, "uid")
                 notifyExtensionOnLogin(user.uid)
-
 
                 // console.log(subscriptionType + "Hello")
                 // console.log(formSnapshot.val(), "form")
@@ -179,7 +165,6 @@ function SignInwithGoogle() {
                 const currentDate = new Date();
                 const formattedDateTime = currentDate.toISOString().replace("T", " ").split(".")[0];
                 let currentUser = user.uid;
-
 
                 if (referralCode) {
                   console.log("Save in database/firebase")
@@ -197,7 +182,6 @@ function SignInwithGoogle() {
                     }
                   })
                 }
-
 
                 if (!subscriptionType) {
                   // If Subscriptiontype is undefined, redirect to Gemini page
@@ -228,13 +212,10 @@ function SignInwithGoogle() {
           })
         }
       })
-
-
     });
   }
+
   return (
-
-
     <div className="flex justify-center">
       <button
         type="button"
@@ -256,4 +237,5 @@ function SignInwithGoogle() {
 
   );
 }
+
 export default SignInwithGoogle;

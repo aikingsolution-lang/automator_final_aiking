@@ -37,40 +37,39 @@ function SignInwithGoogle() {
             : (apiKey = apiSnapshot2.val());
           localStorage.setItem("api_keyforHR", apiKey);
           localStorage.setItem("UIDforHR", user?.uid);
-          localStorage.setItem("IsLoginAsHR", true);
-          localStorage.setItem("UserNameforHR", user.displayName);
+          localStorage.setItem("IsLoginAsHR", "true");
+          localStorage.setItem("UserNameforHR", user.displayName || "User");
           const subRef = ref(db, `hr/${user.uid}/Payment/SubscriptionType`);
           const subSnapshot = await get(subRef);
           localStorage.setItem("SubscriptionType", subSnapshot.val());
 
           //SAVE REFERRAL IN DB IF EXIST
-           const getReferralCodeFromCookie = () => {
-                    const cookie = document.cookie.split('; ').find(row => row.startsWith('referral='));
-                    return cookie ? cookie.split('=')[1] : null;
-                  };
-                  const referralCode = getReferralCodeFromCookie()
-                  //** SAVE REFERAL CODE IN DATABASE  */
-                  const currentDate = new Date();
-                  const formattedDateTime = currentDate.toISOString().replace("T", " ").split(".")[0];
-                  const currentUser = auth?.currentUser?.uid;
-          
-                  if (referralCode) {
-                    console.log("Save in database/firebase")
-                    const newDocRef = ref(db, `/referrals/${referralCode}/${currentUser}`);
-                    console.log(newDocRef, typeof (newDocRef), "referrals");
-                    get(newDocRef).then((snapshot) => {
-                      if (!snapshot.exists()) {
-                        // If the referral code doesn't exist, create a new entry
-                        set(newDocRef, {
-                          signupDate: formattedDateTime,
-                          amount: 0,
-                        }).then(() => {
-          
-                        })
-                      }
-                    })
-                  }
-          
+          const getReferralCodeFromCookie = () => {
+            const cookie = document.cookie.split('; ').find(row => row.startsWith('referral='));
+            return cookie ? cookie.split('=')[1] : null;
+          };
+          const referralCode = getReferralCodeFromCookie()
+          //** SAVE REFERAL CODE IN DATABASE  */
+          const currentDate = new Date();
+          const formattedDateTime = currentDate.toISOString().replace("T", " ").split(".")[0];
+          const currentUser = auth?.currentUser?.uid;
+
+          if (referralCode) {
+            console.log("Save in database/firebase")
+            const newDocRef = ref(db, `/referrals/${referralCode}/${currentUser}`);
+            console.log(newDocRef, typeof (newDocRef), "referrals");
+            get(newDocRef).then((snapshot) => {
+              if (!snapshot.exists()) {
+                // If the referral code doesn't exist, create a new entry
+                set(newDocRef, {
+                  signupDate: formattedDateTime,
+                  amount: 0,
+                }).then(() => {
+
+                })
+              }
+            })
+          }
         };
 
         const redirectUserBasedOnStatus = async () => {
@@ -103,7 +102,7 @@ function SignInwithGoogle() {
           await setCommonLocalStorage();
           await redirectUserBasedOnStatus();
         } else {
-          const newDocRef = ref(db, "hr/" + auth.currentUser.uid);
+          const newDocRef = ref(db, "hr/" + user.uid);
           set(newDocRef, {
             name: name,
             email: email,
@@ -122,9 +121,6 @@ function SignInwithGoogle() {
 
               toast.success("Registered!", { position: "top-center" });
               await setCommonLocalStorage();
-
-
-
 
               await redirectUserBasedOnStatus();
             })
