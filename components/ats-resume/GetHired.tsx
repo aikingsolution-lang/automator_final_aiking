@@ -310,7 +310,6 @@ export default function GetHired() {
     }
   }
 
-
   // Keep other functions like analyzeResumeForATS and analyzeResumeForSkill as they are
 
   const handleGetExistingResume = async () => {
@@ -429,7 +428,6 @@ export default function GetHired() {
   };
 
   // Keep analyzeResumeForATS and analyzeResumeForSkill functions as they are
-
   const handleBuildButtonClick = async () => {
     // Step 1: Check if user is logged in
     if (!user) {
@@ -462,11 +460,9 @@ export default function GetHired() {
         return; // important! stop further execution
       }
 
-      
       setApiKey(apiKey)
       localStorage.setItem("api_key", apiKey);
     }
-
 
     // Step 3: If all checks passed, open the modal
     openModalForBuild();
@@ -504,11 +500,9 @@ export default function GetHired() {
         return; // important! stop further execution
       }
 
-      
       setApiKey(apiKey)
       localStorage.setItem("api_key", apiKey);
     }
-
 
     // Step 3: If all checks passed, open the modal
     openModalForAnalyze();
@@ -583,7 +577,6 @@ export default function GetHired() {
               and 350+ jobseekers using Jobform Automator
             </span>
           </div>
-
 
         </div>
 
