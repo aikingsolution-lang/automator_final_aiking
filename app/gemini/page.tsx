@@ -113,7 +113,7 @@ const GeminiPage: React.FC = () => {
               <div className="absolute inset-0 bg-gradient-to-r from-[#7000FF]/10 to-[#FF00C7]/10 pointer-events-none"></div>
               <iframe
                 className="w-full aspect-video"
-                src="https://www.youtube.com/embed/5VbhMJKTbak?si=7N-YplG58Z6EXs4R"
+                src="https://www.youtube.com/embed/1iO6bBOdbew?si=XhwmMjRZXko35VxG"
                 title="YouTube video player"
                 allowFullScreen
               ></iframe>
