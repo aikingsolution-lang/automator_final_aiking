@@ -392,7 +392,7 @@ const CreateResume: React.FC = () => {
           ${styles}
           <style>
             @page { size: A4; margin: 3mm; }
-            html, body { margin:0; padding:0; background:#ffffff; }
+            html, body { margin:0; padding-left:0; padding-right:0; padding-bottom:0; padding-top:2mm; background:#ffffff; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .page-break { page-break-after: always; }
           </style>
