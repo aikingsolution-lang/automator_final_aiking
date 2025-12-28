@@ -135,7 +135,7 @@ export default function Modal({
 
         {/* Input Field Label with Asterisk */}
         <label className="text-white font-medium">
-          Job Description <span className="text-[#E02529]">*</span>
+          Job Description & Suggestions <span className="text-[#E02529]">*</span>
         </label>
 
         {/* Input Field */}
