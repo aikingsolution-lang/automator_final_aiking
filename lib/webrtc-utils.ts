@@ -208,7 +208,7 @@ export class VideoRecorder {
       if (this.mediaRecorder && this.mediaRecorder.state === "recording") {
         this.mediaRecorder.stop();
       }
-    } catch {}
+    } catch { }
     this.mediaRecorder = null;
 
     if (this.stream) {
@@ -252,6 +252,11 @@ export class SpeechRecognitionUtil {
   private silenceMs = 4000; // default silence window
   private autoRestart = true;
   private cbs: SpeechCallbacks = {};
+  // New: Restart limiting to prevent infinite loops
+  private restartCount = 0;
+  private maxRestarts = 5; // Max consecutive restarts without speech
+  private hadSpeechInput = false; // Track if we got any speech in this session
+  private restartCooldownMs = 500; // Cooldown between restarts
 
   constructor(lang = "en-US") {
     const SR: any =
@@ -289,6 +294,8 @@ export class SpeechRecognitionUtil {
 
       // Notify interim (live subtitles)
       if (interim) {
+        this.hadSpeechInput = true; // Mark that we received speech
+        this.restartCount = 0; // Reset restart counter on speech
         this.interimBuffer = interim;
         this.cbs.onInterim?.(interim);
         this.bumpSilenceTimer(); // still speaking → extend timer
@@ -298,6 +305,8 @@ export class SpeechRecognitionUtil {
       if (finalParts.length > 0) {
         const finalText = finalParts.join(" ").trim();
         if (finalText) {
+          this.hadSpeechInput = true; // Mark that we received speech
+          this.restartCount = 0; // Reset restart counter on speech
           this.interimBuffer = "";
           this.cbs.onFinal?.(finalText);
           this.bumpSilenceTimer(); // keep window open; user may continue
@@ -307,26 +316,48 @@ export class SpeechRecognitionUtil {
 
     this.recognition.onerror = (evt: any) => {
       const msg = evt?.error || "unknown_error";
+      console.log(`[SpeechRecognition] Error: ${msg}, restartCount: ${this.restartCount}`);
       this.active = false;
       this.cbs.onError?.(msg);
+
+      // Handle 'no-speech' error specially - don't restart immediately
+      if (msg === "no-speech") {
+        this.restartCount++;
+        if (this.restartCount >= this.maxRestarts) {
+          console.warn("[SpeechRecognition] Max restarts reached (no-speech), stopping.");
+          this.autoRestart = false;
+          return;
+        }
+      }
 
       // Some errors are recoverable; try to restart if requested
       if (this.autoRestart && msg !== "not-allowed" && msg !== "service-not-allowed") {
         try {
           this.recognition.stop();
-          // brief cooldown
-          setTimeout(() => this.safeStart(), 300);
-        } catch {}
+        } catch { }
+        // Use longer cooldown for no-speech to prevent rapid restart loops
+        const cooldown = msg === "no-speech" ? 1000 : this.restartCooldownMs;
+        setTimeout(() => this.safeStart(), cooldown);
       }
     };
 
     this.recognition.onend = () => {
+      console.log(`[SpeechRecognition] onend, autoRestart: ${this.autoRestart}, restartCount: ${this.restartCount}`);
       this.active = false;
       this.cbs.onEnd?.();
 
-      // If we didn’t explicitly stop and autoRestart is on, resume
+      // If we didn't explicitly stop and autoRestart is on, resume
+      // But limit consecutive restarts without speech input
       if (this.autoRestart) {
-        setTimeout(() => this.safeStart(), 200);
+        if (!this.hadSpeechInput) {
+          this.restartCount++;
+          if (this.restartCount >= this.maxRestarts) {
+            console.warn("[SpeechRecognition] Max restarts reached without speech, stopping.");
+            this.autoRestart = false;
+            return;
+          }
+        }
+        setTimeout(() => this.safeStart(), this.restartCooldownMs);
       }
     };
   }
@@ -376,22 +407,59 @@ export class SpeechRecognitionUtil {
     return this.active;
   }
 
+  /**
+   * Start with auto-restart enabled (legacy behavior).
+   * Use startOnce() if you want single-session listening.
+   */
   start() {
     if (!this.recognition) return;
+    this.restartCount = 0;
+    this.hadSpeechInput = false;
     this.autoRestart = true;
     this.safeStart();
   }
 
+  /**
+   * Start listening for a single session without auto-restart.
+   * Use this after AI finishes speaking to prevent restart loops.
+   */
+  startOnce() {
+    if (!this.recognition) return;
+    console.log("[SpeechRecognition] startOnce called (no auto-restart)");
+    this.restartCount = 0;
+    this.hadSpeechInput = false;
+    this.autoRestart = false; // Don't auto-restart
+    this.safeStart();
+  }
+
+  /**
+   * Enable auto-restart after startOnce() if needed.
+   */
+  enableAutoRestart() {
+    this.autoRestart = true;
+    this.restartCount = 0;
+  }
+
   stop() {
     if (!this.recognition) return;
+    console.log("[SpeechRecognition] stop called");
     this.autoRestart = false;
+    this.restartCount = 0;
     if (this.silenceTimer) {
       window.clearTimeout(this.silenceTimer);
       this.silenceTimer = null;
     }
     try {
       this.recognition.stop();
-    } catch {}
+    } catch { }
     this.active = false;
+  }
+
+  /**
+   * Reset restart counter (call when speech is successfully received).
+   */
+  resetRestartCounter() {
+    this.restartCount = 0;
+    this.hadSpeechInput = true;
   }
 }
