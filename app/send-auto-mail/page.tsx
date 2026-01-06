@@ -30,7 +30,14 @@ const Page = () => {
   const [showModal, setShowModal] = useState(false);
   const [subject, setSubject] = useState(""); // Default empty
   const [body, setBody] = useState(""); // Default empty
-  const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor'); // Mobile tab state
+  const [mobileTab, setMobileTab] = useState<'editor' | 'preview' | 'resume'>('editor'); // Mobile tab state
+
+  // New states for duplicate detection and resume preview
+  const [sentEmails, setSentEmails] = useState<Map<string, { companyName: string; sentAt: number }>>(new Map());
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
+  const [duplicateCompanies, setDuplicateCompanies] = useState<any[]>([]);
+  const [showResumePreview, setShowResumePreview] = useState(false);
+
   const resumeFetched = useRef(false);
   const hasRun = useRef(false);
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -80,6 +87,57 @@ const Page = () => {
       }, 0);
     }
   };
+
+  // Helper function to extract filename from resume URL
+  const getResumeFilename = (url: string) => {
+    if (!url) return 'Resume';
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      const filename = pathname.split('/').pop() || 'Resume';
+      return decodeURIComponent(filename);
+    } catch {
+      return 'Resume';
+    }
+  };
+
+  // Function to check for duplicate companies (already emailed)
+  const checkForDuplicates = (companyList: any[]) => {
+    const duplicates = companyList.filter(company =>
+      sentEmails.has(company.email?.toLowerCase())
+    );
+    return duplicates;
+  };
+
+  // Fetch previously sent emails
+  useEffect(() => {
+    if (!uid) return;
+
+    const fetchSentEmails = async () => {
+      try {
+        const sentEmailsRef = ref(db, `user/${uid}/sent_emails`);
+        const snapshot = await get(sentEmailsRef);
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const emailMap = new Map<string, { companyName: string; sentAt: number }>();
+          Object.values(data).forEach((entry: any) => {
+            if (entry.email) {
+              emailMap.set(entry.email.toLowerCase(), {
+                companyName: entry.companyName || 'Unknown',
+                sentAt: entry.sentAt || 0
+              });
+            }
+          });
+          setSentEmails(emailMap);
+          console.log('Fetched sent emails:', emailMap.size);
+        }
+      } catch (err) {
+        console.error('Error fetching sent emails:', err);
+      }
+    };
+
+    fetchSentEmails();
+  }, [uid]);
 
   // Step 1: Fetch user data and resume
   useEffect(() => {
@@ -343,7 +401,29 @@ const Page = () => {
           sentEmailCount += 1;
           await set(emailCountRef, existingCount + sentEmailCount);
           console.log(`Updated email count to ${existingCount + sentEmailCount}`);
+
+          // Save to sent_emails for duplicate tracking
           if (company) {
+            const sentEmailRef = ref(db, `user/${uid}/sent_emails`);
+            const newSentEmailRef = push(sentEmailRef);
+            await set(newSentEmailRef, {
+              email: company.email?.toLowerCase(),
+              companyName: company.company,
+              jobTitle: company.title,
+              sentAt: Date.now()
+            });
+
+            // Update local state
+            setSentEmails(prev => {
+              const newMap = new Map(prev);
+              newMap.set(company.email?.toLowerCase(), {
+                companyName: company.company,
+                sentAt: Date.now()
+              });
+              return newMap;
+            });
+
+            // Save to hr_marketing_data
             const marketingRef = ref(db, "hr_marketing_data");
             const newCompanyRef = push(marketingRef);
             await set(newCompanyRef, {
@@ -379,13 +459,54 @@ const Page = () => {
       toast.error("Please fill in both subject and body.");
       return;
     }
-    console.log('Modal submit - Subject:', subject, 'Body:', body); // Debug log
+
+    // Check for duplicate companies
+    const duplicates = checkForDuplicates(companies);
+    if (duplicates.length > 0 && !showDuplicateWarning) {
+      setDuplicateCompanies(duplicates);
+      setShowDuplicateWarning(true);
+      return; // Wait for user confirmation
+    }
+
+    console.log('Modal submit - Subject:', subject, 'Body:', body);
+    setShowModal(false);
+    setShowDuplicateWarning(false);
+    setDuplicateCompanies([]);
+    setIsSending(true);
+    await sendBatchEmails(subject, body);
+    setSubject("");
+    setBody("");
+  };
+
+  // Handle confirming to send despite duplicates
+  const handleConfirmDuplicates = async () => {
+    setShowDuplicateWarning(false);
     setShowModal(false);
     setIsSending(true);
     await sendBatchEmails(subject, body);
-    // Reset fields after sending
     setSubject("");
     setBody("");
+    setDuplicateCompanies([]);
+  };
+
+  // Handle skipping duplicate companies
+  const handleSkipDuplicates = () => {
+    // Remove duplicate companies from the list
+    const duplicateEmails = new Set(duplicateCompanies.map(c => c.email?.toLowerCase()));
+    const filteredCompanies = companies.filter(c => !duplicateEmails.has(c.email?.toLowerCase()));
+    const filteredEmails = filteredCompanies.map(c => c.email).filter(e => e !== "Not found");
+
+    if (filteredCompanies.length === 0) {
+      toast.info("All companies have already been emailed. No new emails to send.");
+      setShowDuplicateWarning(false);
+      setShowModal(false);
+      return;
+    }
+
+    setCompanies(filteredCompanies);
+    setEmailArray(filteredEmails);
+    setShowDuplicateWarning(false);
+    toast.success(`Removed ${duplicateCompanies.length} duplicate(s). ${filteredCompanies.length} companies remaining.`);
   };
 
   const handleCancel = () => {
@@ -651,7 +772,7 @@ const Page = () => {
       {/* Email Customization Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#11011E] rounded-xl border border-[#0FAE96] max-w-5xl w-full max-h-[95vh] overflow-hidden shadow-[0_0_40px_rgba(15,174,150,0.3)]">
+          <div className="relative bg-[#11011E] rounded-xl border border-[#0FAE96] max-w-6xl w-full max-h-[95vh] overflow-hidden shadow-[0_0_40px_rgba(15,174,150,0.3)]">
             {/* Header */}
             <div className="p-5 border-b border-gray-700">
               <h2 className="text-2xl font-bold text-white">✉️ Customize Your Job Application Email</h2>
@@ -669,13 +790,19 @@ const Page = () => {
                   onClick={() => setMobileTab('editor')}
                   className={`flex-1 py-3 text-sm font-medium transition-colors ${mobileTab === 'editor' ? 'text-[#0FAE96] border-b-2 border-[#0FAE96] bg-[#0FAE96]/10' : 'text-gray-400'}`}
                 >
-                  📝 Write Email
+                  📝 Write
                 </button>
                 <button
                   onClick={() => setMobileTab('preview')}
                   className={`flex-1 py-3 text-sm font-medium transition-colors ${mobileTab === 'preview' ? 'text-[#0FAE96] border-b-2 border-[#0FAE96] bg-[#0FAE96]/10' : 'text-gray-400'}`}
                 >
-                  👁️ Preview ({companies.length})
+                  👁️ Preview
+                </button>
+                <button
+                  onClick={() => setMobileTab('resume')}
+                  className={`flex-1 py-3 text-sm font-medium transition-colors ${mobileTab === 'resume' ? 'text-[#0FAE96] border-b-2 border-[#0FAE96] bg-[#0FAE96]/10' : 'text-gray-400'}`}
+                >
+                  📄 Resume
                 </button>
               </div>
               {/* LEFT SIDE - Editor (Always visible on desktop, tab on mobile) */}
@@ -793,29 +920,180 @@ Best regards,
                   </div>
                 )}
               </div>
+
+              {/* RESUME PREVIEW (Mobile Tab Only - hidden on desktop) */}
+              <div className={`p-5 bg-[#0d0d1a] ${mobileTab !== 'resume' ? 'hidden' : ''}`}>
+                <h3 className="text-lg font-semibold text-white mb-4">📄 Attached Resume</h3>
+                <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+                  {resume ? (
+                    <>
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center">
+                          <span className="text-red-400 text-lg">📄</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm font-medium truncate">{getResumeFilename(resume)}</p>
+                          <p className="text-gray-500 text-xs">PDF Document</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowResumePreview(true)}
+                        className="w-full block text-center py-2 bg-[#0FAE96]/20 text-[#0FAE96] rounded-lg text-sm font-medium hover:bg-[#0FAE96]/30 transition-colors"
+                      >
+                        👁️ View Resume
+                      </button>
+                    </>
+                  ) : (
+                    <div className="text-center py-4">
+                      <span className="text-4xl mb-2 block">⚠️</span>
+                      <p className="text-gray-400 text-sm">No resume attached</p>
+                      <a href="/resume2" className="text-[#0FAE96] text-sm hover:underline mt-2 inline-block">
+                        Upload Resume →
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                {/* Duplicate Warning Indicator */}
+                {sentEmails.size > 0 && checkForDuplicates(companies).length > 0 && (
+                  <div className="mt-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
+                    <p className="text-yellow-400 text-xs font-medium flex items-center gap-2">
+                      <span>⚠️</span>
+                      {checkForDuplicates(companies).length} already emailed
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
+            {/* Duplicate Warning Popup */}
+            {showDuplicateWarning && (
+              <div className="absolute inset-0 bg-black/60 flex items-center justify-center p-4 z-10">
+                <div className="bg-[#1a1a2e] rounded-xl border border-yellow-500/50 max-w-md w-full p-6 shadow-[0_0_30px_rgba(234,179,8,0.2)]">
+                  <div className="text-center mb-4">
+                    <span className="text-5xl">⚠️</span>
+                    <h3 className="text-xl font-bold text-white mt-2">Duplicate Companies Detected</h3>
+                    <p className="text-gray-400 text-sm mt-1">
+                      You have already sent emails to {duplicateCompanies.length} of these companies:
+                    </p>
+                  </div>
+
+                  <div className="max-h-40 overflow-y-auto custom-scrollbar mb-4">
+                    {duplicateCompanies.map((company, idx) => (
+                      <div key={idx} className="flex items-center gap-2 py-2 border-b border-gray-700 last:border-0">
+                        <span className="text-yellow-400">•</span>
+                        <span className="text-white text-sm">{company.company}</span>
+                        <span className="text-gray-500 text-xs">({company.email})</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={handleSkipDuplicates}
+                      className="w-full py-2.5 bg-[#0FAE96] text-white rounded-lg font-medium hover:bg-[#0C8C79] transition-colors"
+                    >
+                      ✓ Skip Duplicates & Continue
+                    </button>
+                    <button
+                      onClick={handleConfirmDuplicates}
+                      className="w-full py-2.5 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 transition-colors"
+                    >
+                      📤 Send Anyway (Including Duplicates)
+                    </button>
+                    <button
+                      onClick={() => setShowDuplicateWarning(false)}
+                      className="w-full py-2 text-gray-400 hover:text-white transition-colors text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Footer - Action Buttons */}
-            <div className="p-5 border-t border-gray-700 flex justify-between items-center bg-[#11011E]">
-              <p className="text-sm text-gray-400">
-                📧 Sending to <span className="text-[#0FAE96] font-bold">{emailArray.length}</span> companies
-              </p>
-              <div className="flex gap-3">
+            <div className="p-5 border-t border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-3 bg-[#11011E]">
+              <div className="flex items-center gap-4 text-sm text-gray-400">
+                <span>📧 <span className="text-[#0FAE96] font-bold">{emailArray.length}</span> companies</span>
+                <span className="hidden sm:inline">•</span>
+                <span className="hidden sm:flex items-center gap-2">
+                  {resume ? (
+                    <div className="flex items-center gap-2 bg-gray-800/50 px-3 py-1.5 rounded-lg border border-gray-700">
+                      <span className="text-green-400 flex items-center gap-1">
+                        <span>✅</span> Resume Attached
+                      </span>
+                      <span className="text-gray-600">|</span>
+                      <button
+                        onClick={() => setShowResumePreview(true)}
+                        className="text-[#0FAE96] hover:text-[#12c9ad] font-medium flex items-center gap-1 transition-colors"
+                      >
+                        👁️ View Resume
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/30">
+                      <span className="text-red-400">⚠️ No resume attached</span>
+                      <a href="/updateresume" className="text-[#0FAE96] hover:underline text-xs">Upload</a>
+                    </div>
+                  )}
+                </span>
+              </div>
+              <div className="flex gap-3 w-full sm:w-auto">
                 <button
                   onClick={handleCancel}
-                  className="px-6 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium"
+                  className="flex-1 sm:flex-none px-6 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSubmit}
                   disabled={!subject.trim() || !body.trim()}
-                  className="px-6 py-2.5 bg-[#0FAE96] text-white rounded-lg hover:bg-[#0C8C79] transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2"
+                  className="flex-1 sm:flex-none px-6 py-2.5 bg-[#0FAE96] text-white rounded-lg hover:bg-[#0C8C79] transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center gap-2"
                 >
-                  <span>📤</span> Send All Emails
+                  <span>📤</span> Send All
                 </button>
               </div>
             </div>
+
+            {/* Resume Preview Modal */}
+            {showResumePreview && resume && (
+              <div className="absolute inset-0 bg-black/90 flex items-center justify-center p-4 z-20">
+                <div className="bg-[#11011E] rounded-xl border border-[#0FAE96] max-w-5xl w-full h-[90vh] flex flex-col shadow-[0_0_40px_rgba(15,174,150,0.3)]">
+                  <div className="p-4 border-b border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">📄</span>
+                      <div>
+                        <h3 className="text-lg font-bold text-white">Resume Preview</h3>
+                        <p className="text-gray-400 text-xs">This resume will be attached to all emails</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href="/updateresume"
+                        className="px-4 py-2 bg-yellow-600 text-white rounded-lg text-sm hover:bg-yellow-700 transition-colors flex items-center gap-1"
+                      >
+                        🔄 Change Resume
+                      </a>
+                      <button
+                        onClick={() => setShowResumePreview(false)}
+                        className="px-4 py-2 bg-gray-700 text-white rounded-lg text-sm hover:bg-gray-600 transition-colors"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 bg-white">
+                    <iframe
+                      src={resume.includes('drive.google.com') ? resume.replace('/view', '/preview').replace('?usp=sharing', '') : resume}
+                      className="w-full h-full"
+                      title="Resume Preview"
+                      style={{ border: 'none' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
