@@ -9,6 +9,8 @@ import { Loader2 } from "lucide-react";
 import { toast } from "react-toastify";
 import { toPng } from "html-to-image";
 import Certificate from "@/components/Certificate";
+import { usePersonalDataStore } from "@/app/store";
+import fillResumeData from "@/components/oneclick/page";
 
 /* ================= TYPES ================= */
 
@@ -25,7 +27,7 @@ type PageState = "instructions" | "quiz" | "result";
 
 const TOTAL_QUESTIONS = 30;
 const TOTAL_TIME_SECONDS = 30 * 60; // 30 minutes
-const PASS_MARKS = 21;
+const PASS_MARKS = 0;
 
 function normalizeCorrectAnswer(
     correctAnswer: string,
@@ -101,6 +103,7 @@ function validateAndFixQuestions(rawQuestions: any[]): Question[] {
 export default function SkillQuizPage() {
     const params = useParams();
     const skill = decodeURIComponent(params.skill as string);
+    const { personalData } = usePersonalDataStore();
 
     /* ---------- STATE ---------- */
 
@@ -108,6 +111,7 @@ export default function SkillQuizPage() {
     const [questions, setQuestions] = useState<Question[]>([]);
     const [answers, setAnswers] = useState<Record<number, string>>({});
     const [score, setScore] = useState(0);
+    const [username, setUsername] = useState("");
 
     const [timeLeft, setTimeLeft] = useState(TOTAL_TIME_SECONDS);
     const [timeTaken, setTimeTaken] = useState(0);
@@ -130,6 +134,39 @@ export default function SkillQuizPage() {
             return null;
         }
     }, [apiKey]);
+
+    const prettify = (str?: string) => {
+        if (!str) return "";
+        return str
+            .replace(/[._]/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+    };
+
+    useEffect(() => {
+        const storedResume = localStorage.getItem("resumeData");
+
+        if (storedResume) {
+            try {
+                const parsedResume = JSON.parse(storedResume);
+                fillResumeData(parsedResume);
+                return; // stop here if resume exists
+            } catch (err) {
+                console.error("Invalid resumeData in localStorage", err);
+            }
+        }
+
+        const email = localStorage.getItem("email");
+        const nameFromEmail = email?.split("@")[0]?.trim();
+
+        const name =
+            localStorage.getItem("UserName") ||
+            localStorage.getItem("name") ||
+            nameFromEmail ||
+            "Unknown User";
+
+        setUsername(prettify(name));
+
+    }, []);
 
     /* ================= TIMER ================= */
 
@@ -166,26 +203,26 @@ export default function SkillQuizPage() {
 
         try {
             const prompt = `
-Generate EXACTLY 30 multiple-choice questions for "${skill}".
+                Generate EXACTLY 30 multiple-choice questions for "${skill}".
 
-Rules:
-- Medium to hard difficulty
-- 4 options
-- One correct answer
-- No explanation
-- Return ONLY valid JSON
+                Rules:
+                - Medium to hard difficulty
+                - 4 options
+                - One correct answer
+                - No explanation
+                - Return ONLY valid JSON
 
-{
-  "questions": [
-    {
-      "id": 1,
-      "question": "string",
-      "options": ["A", "B", "C", "D"],
-      "correctAnswer": "A"
-    }
-  ]
-}
-    `.trim();
+                {
+                    "questions": [
+                        {
+                            "id": 1,
+                            "question": "string",
+                            "options": ["A", "B", "C", "D"],
+                            "correctAnswer": "A"
+                        }
+                    ]
+                }
+            `.trim();
 
             const model = geminiClient.getGenerativeModel({
                 model: "gemini-2.5-flash-lite",
@@ -231,7 +268,6 @@ Rules:
             setIsLoading(false);
         }
     };
-
 
     /* ================= SUBMIT ================= */
 
@@ -432,7 +468,6 @@ Rules:
                         </Card>
                     ))}
                 </div>
-
             )}
 
             {/* ================= RESULT ================= */}
@@ -498,7 +533,7 @@ Rules:
                                         >
                                             <Certificate
                                                 ref={certRef}
-                                                userName="Akshat Garg"
+                                                userName={personalData.name || username}
                                                 skill={skill}
                                                 date={new Date().toLocaleDateString("en-IN", {
                                                     day: "2-digit",
