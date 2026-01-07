@@ -38,6 +38,10 @@ const Page = () => {
   const [duplicateCompanies, setDuplicateCompanies] = useState<any[]>([]);
   const [showResumePreview, setShowResumePreview] = useState(false);
 
+  // AI Email Generation states
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [aiMode, setAiMode] = useState<'generate' | 'enhance' | null>(null);
+
   const resumeFetched = useRef(false);
   const hasRun = useRef(false);
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -85,6 +89,148 @@ const Page = () => {
         input.focus();
         input.setSelectionRange(start + placeholder.length, start + placeholder.length);
       }, 0);
+    }
+  };
+
+  // Fallback email template when AI fails
+  const getFallbackEmail = () => {
+    const fallbackSubject = "Application for {job_title} Position at {company_name}";
+    const fallbackBody = `Dear Hiring Manager,
+
+I am writing to express my strong interest in the {job_title} position at {company_name}. With my background and skills, I am confident I would be a valuable addition to your team.
+
+I have attached my resume for your review. I would welcome the opportunity to discuss how my qualifications align with your team's needs.
+
+Thank you for considering my application. I look forward to hearing from you.
+
+Best regards,
+{your_name}`;
+
+    return { subject: fallbackSubject, body: fallbackBody };
+  };
+
+  // AI Email Generation function
+  const generateEmailWithAI = async (mode: 'generate' | 'enhance') => {
+    setIsGeneratingAI(true);
+    setAiMode(mode);
+
+    try {
+      // Check if API key exists
+      if (!gemini_key) {
+        toast.warning("⚠️ No Gemini API key found. Using template email instead.", { autoClose: 4000 });
+        const fallback = getFallbackEmail();
+        setSubject(fallback.subject);
+        setBody(fallback.body);
+        return;
+      }
+
+      // Get first company for context
+      const sampleCompany = companies[0] || { company: "the company", title: "the position", location: "the location" };
+
+      // Build prompt based on mode
+      let prompt = "";
+      if (mode === 'generate') {
+        prompt = `You are a professional email writer. Write a compelling, personalized cold email for a job application.
+
+Context:
+- Applicant Name: ${userName || "Job Applicant"}
+- Target Company: ${sampleCompany.company || "Company"}
+- Job Position: ${sampleCompany.title || "Position"}
+- Location: ${sampleCompany.location || "Location"}
+- Resume/Background: The applicant has relevant experience and skills for this role.
+
+Requirements:
+1. Write a professional, engaging subject line
+2. Write a concise body (3-4 paragraphs max)
+3. Use placeholders: {company_name}, {job_title}, {location}, {your_name} so the email can be personalized for multiple companies
+4. Make it sound human, not robotic
+5. Keep it under 200 words
+
+Format your response EXACTLY like this:
+SUBJECT: [your subject line here]
+BODY:
+[your email body here]`;
+      } else {
+        // Enhance mode
+        if (!subject.trim() && !body.trim()) {
+          toast.error("Please write something first before enhancing.", { autoClose: 3000 });
+          return;
+        }
+
+        prompt = `You are a professional email editor. Improve the following job application email while keeping the same intent and message.
+
+Current Email:
+Subject: ${subject || "(no subject)"}
+Body: ${body || "(no body)"}
+
+Context:
+- Applicant Name: ${userName || "Job Applicant"}
+- Target Company: ${sampleCompany.company || "Company"}  
+- Job Position: ${sampleCompany.title || "Position"}
+
+Requirements:
+1. Improve clarity, professionalism, and engagement
+2. Fix any grammar or spelling issues
+3. Keep placeholders if present: {company_name}, {job_title}, {location}, {your_name}
+4. Keep similar length (don't make it much longer)
+5. Make it more compelling
+
+Format your response EXACTLY like this:
+SUBJECT: [improved subject line]
+BODY:
+[improved email body]`;
+      }
+
+      // Initialize Gemini
+      const genAI = new GoogleGenerativeAI(gemini_key);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+      // Generate content with timeout
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), 30000)
+      );
+
+      const generatePromise = model.generateContent(prompt);
+      const result = await Promise.race([generatePromise, timeoutPromise]) as any;
+
+      const responseText = result.response.text();
+
+      // Parse response
+      const subjectMatch = responseText.match(/SUBJECT:\s*(.+?)(?:\n|BODY:)/i);
+      const bodyMatch = responseText.match(/BODY:\s*([\s\S]+)$/i);
+
+      if (subjectMatch && bodyMatch) {
+        setSubject(subjectMatch[1].trim());
+        setBody(bodyMatch[1].trim());
+        toast.success(`✨ Email ${mode === 'generate' ? 'generated' : 'enhanced'} with AI!`, { autoClose: 3000 });
+      } else {
+        throw new Error('Invalid response format');
+      }
+
+    } catch (error: any) {
+      console.error('AI Generation Error:', error);
+
+      // Detect rate limit or quota errors
+      const errorMessage = error?.message?.toLowerCase() || '';
+      const isRateLimit = errorMessage.includes('rate') || errorMessage.includes('quota') || errorMessage.includes('429');
+      const isNetworkError = errorMessage.includes('network') || errorMessage.includes('fetch') || errorMessage.includes('timeout');
+
+      if (isRateLimit) {
+        toast.warning("⏱️ AI rate limit reached. Using template email instead.", { autoClose: 5000 });
+      } else if (isNetworkError) {
+        toast.warning("🌐 Network error. Using template email instead.", { autoClose: 5000 });
+      } else {
+        toast.warning("⚠️ AI unavailable. Using template email instead.", { autoClose: 5000 });
+      }
+
+      // Use fallback
+      const fallback = getFallbackEmail();
+      setSubject(fallback.subject);
+      setBody(fallback.body);
+
+    } finally {
+      setIsGeneratingAI(false);
+      setAiMode(null);
     }
   };
 
@@ -806,56 +952,113 @@ const Page = () => {
                 </button>
               </div>
               {/* LEFT SIDE - Editor (Always visible on desktop, tab on mobile) */}
-              <div className={`flex-1 p-5 overflow-y-auto custom-scrollbar lg:border-r border-gray-700 ${mobileTab !== 'editor' ? 'hidden lg:block' : ''}`}>
-                <h3 className="text-lg font-semibold text-white mb-4">📝 Write Your Email</h3>
+              <div className={`flex-1 lg:flex lg:flex-col lg:border-r border-gray-700 overflow-y-auto lg:overflow-visible custom-scrollbar ${mobileTab !== 'editor' ? 'hidden lg:flex' : ''}`}>
+                {/* Header + AI Toolbar - Sticky on Desktop Only */}
+                <div className="p-5 pb-0 lg:sticky lg:top-0 lg:bg-[#11011E] lg:z-10">
+                  <h3 className="text-lg font-semibold text-white mb-4">📝 Write Your Email</h3>
 
-                {/* Subject Input with inline placeholders */}
-                <div className="mb-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-gray-300">Subject Line</label>
-                    <div className="flex gap-1">
-                      {availablePlaceholders.slice(0, 2).reverse().map((p) => (
+                  {/* AI Generation Toolbar */}
+                  <div className="mb-5 p-4 bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl border border-purple-500/30">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">✨</span>
+                        <div>
+                          <p className="text-white font-medium text-sm">AI Email Assistant</p>
+                          <p className="text-gray-400 text-xs">Generate or enhance your email with AI</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 w-full sm:w-auto">
                         <button
-                          key={p.key + '-subject'}
-                          onClick={() => insertPlaceholder(p.key, 'subject')}
-                          className="px-2 py-0.5 bg-[#0FAE96]/20 text-[#0FAE96] rounded text-xs font-mono hover:bg-[#0FAE96]/40 transition-all"
-                          title={`Insert ${p.label} into subject`}
+                          onClick={() => generateEmailWithAI('generate')}
+                          disabled={isGeneratingAI}
+                          className="flex-1 sm:flex-none px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                         >
-                          + {p.label}
+                          {isGeneratingAI && aiMode === 'generate' ? (
+                            <>
+                              <span className="animate-spin">⏳</span> Generating...
+                            </>
+                          ) : (
+                            <>
+                              <span>🪄</span> Generate
+                            </>
+                          )}
                         </button>
-                      ))}
+                        <button
+                          onClick={() => generateEmailWithAI('enhance')}
+                          disabled={isGeneratingAI || (!subject.trim() && !body.trim())}
+                          className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          title={!subject.trim() && !body.trim() ? "Write something first to enhance" : "Improve your draft with AI"}
+                        >
+                          {isGeneratingAI && aiMode === 'enhance' ? (
+                            <>
+                              <span className="animate-spin">⏳</span> Enhancing...
+                            </>
+                          ) : (
+                            <>
+                              <span>🔧</span> Enhance
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
+                    {isGeneratingAI && (
+                      <div className="mt-3 flex items-center gap-2 text-purple-300 text-xs">
+                        <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                        <span>AI is {aiMode === 'generate' ? 'crafting your email' : 'improving your draft'}...</span>
+                      </div>
+                    )}
                   </div>
-                  <input
-                    ref={subjectInputRef}
-                    type="text"
-                    placeholder="e.g., Application for {job_title} at {company_name}"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="w-full p-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-[#0FAE96] focus:ring-2 focus:ring-[#0FAE96]/50 font-mono text-sm"
-                  />
                 </div>
 
-                {/* Body Textarea with inline placeholders */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-gray-300">Email Body</label>
-                    <div className="flex gap-1 flex-wrap justify-end">
-                      {availablePlaceholders.map((p) => (
-                        <button
-                          key={p.key + '-body'}
-                          onClick={() => insertPlaceholder(p.key, 'body')}
-                          className="px-2 py-0.5 bg-[#0FAE96]/20 text-[#0FAE96] rounded text-xs font-mono hover:bg-[#0FAE96]/40 transition-all"
-                          title={`Insert ${p.label} into body`}
-                        >
-                          + {p.label}
-                        </button>
-                      ))}
+                {/* Form Content - Scrollable on Desktop Only */}
+                <div className="p-5 pt-0 lg:flex-1 lg:overflow-y-auto lg:custom-scrollbar">
+                  {/* Subject Input with inline placeholders */}
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-gray-300">Subject Line</label>
+                      <div className="flex gap-1">
+                        {availablePlaceholders.slice(0, 2).reverse().map((p) => (
+                          <button
+                            key={p.key + '-subject'}
+                            onClick={() => insertPlaceholder(p.key, 'subject')}
+                            className="px-2 py-0.5 bg-[#0FAE96]/20 text-[#0FAE96] rounded text-xs font-mono hover:bg-[#0FAE96]/40 transition-all"
+                            title={`Insert ${p.label} into subject`}
+                          >
+                            + {p.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
+                    <input
+                      ref={subjectInputRef}
+                      type="text"
+                      placeholder="e.g., Application for {job_title} at {company_name}"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      className="w-full p-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-[#0FAE96] focus:ring-2 focus:ring-[#0FAE96]/50 font-mono text-sm"
+                    />
                   </div>
-                  <textarea
-                    ref={bodyTextareaRef}
-                    placeholder={`Dear Hiring Manager,
+
+                  {/* Body Textarea with inline placeholders */}
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-gray-300">Email Body</label>
+                      <div className="flex gap-1 flex-wrap justify-end">
+                        {availablePlaceholders.map((p) => (
+                          <button
+                            key={p.key + '-body'}
+                            onClick={() => insertPlaceholder(p.key, 'body')}
+                            className="px-2 py-0.5 bg-[#0FAE96]/20 text-[#0FAE96] rounded text-xs font-mono hover:bg-[#0FAE96]/40 transition-all"
+                            title={`Insert ${p.label} into body`}
+                          >
+                            + {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <textarea
+                      ref={bodyTextareaRef}
+                      placeholder={`Dear Hiring Manager,
 
 I am writing to express my interest in the {job_title} position at {company_name}.
 
@@ -863,62 +1066,70 @@ With my skills and experience, I believe I would be a great fit for your team in
 
 Best regards,
 {your_name}`}
-                    value={body}
-                    onChange={(e) => setBody(e.target.value)}
-                    className="w-full p-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-[#0FAE96] focus:ring-2 focus:ring-[#0FAE96]/50 h-64 resize-none font-mono text-sm leading-relaxed"
-                    rows={10}
-                  />
-                </div>
+                      value={body}
+                      onChange={(e) => setBody(e.target.value)}
+                      className="w-full p-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-[#0FAE96] focus:ring-2 focus:ring-[#0FAE96]/50 h-64 resize-none font-mono text-sm leading-relaxed"
+                      rows={10}
+                    />
+                  </div>
 
-                {/* Placeholder Legend */}
-                <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-                  <p className="text-xs text-gray-400 mb-2 font-medium">🏷️ Available Placeholders:</p>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    {availablePlaceholders.map((p) => (
-                      <div key={p.key + '-legend'} className="flex items-center gap-2">
-                        <code className="bg-gray-900 px-1.5 py-0.5 rounded text-[#0FAE96]">{p.key}</code>
-                        <span className="text-gray-500">→ {p.label}</span>
-                      </div>
-                    ))}
+                  {/* Placeholder Legend */}
+                  <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+                    <p className="text-xs text-gray-400 mb-2 font-medium">🏷️ Available Placeholders:</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {availablePlaceholders.map((p) => (
+                        <div key={p.key + '-legend'} className="flex items-center gap-2">
+                          <code className="bg-gray-900 px-1.5 py-0.5 rounded text-[#0FAE96]">{p.key}</code>
+                          <span className="text-gray-500">→ {p.label}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* RIGHT SIDE - Live Preview (Always visible on desktop, tab on mobile) */}
-              <div className={`flex-1 p-5 bg-[#0d0d1a] overflow-y-auto custom-scrollbar ${mobileTab !== 'preview' ? 'hidden lg:block' : ''}`}>
-                <h3 className="text-lg font-semibold text-white mb-2 lg:mb-4">👁️ Live Preview</h3>
-                <p className="text-xs text-gray-500 mb-4">See how your email looks for each company:</p>
+              <div className={`flex-1 lg:flex lg:flex-col bg-[#0d0d1a] overflow-y-auto lg:overflow-visible custom-scrollbar ${mobileTab !== 'preview' ? 'hidden lg:flex' : ''}`}>
+                {/* Header - Sticky on Desktop Only */}
+                <div className="p-5 pb-0 lg:sticky lg:top-0 lg:bg-[#0d0d1a] lg:z-10">
+                  <h3 className="text-lg font-semibold text-white mb-2 lg:mb-4">👁️ Live Preview</h3>
+                  <p className="text-xs text-gray-500 mb-4">See how your email looks for each company:</p>
+                </div>
 
-                {companies.length > 0 && (
-                  <div className="space-y-4">
-                    {companies.slice(0, 3).map((company, idx) => (
-                      <div key={idx} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-                        <div className="flex items-center gap-2 mb-3">
-                          <span className="w-6 h-6 bg-[#0FAE96] rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</span>
-                          <span className="text-sm font-medium text-white">{company.company}</span>
-                          <span className="text-xs text-gray-500">({company.email})</span>
-                        </div>
-                        <div className="space-y-2 text-sm">
-                          <div>
-                            <span className="text-gray-400 text-xs uppercase tracking-wide">Subject:</span>
-                            <p className="text-white font-medium mt-0.5">
-                              {replacePlaceholders(subject || 'Your subject here...', company)}
-                            </p>
+                {/* Preview Content - Scrollable on Desktop Only */}
+                <div className="p-5 pt-0 lg:flex-1 lg:overflow-y-auto lg:custom-scrollbar">
+
+                  {companies.length > 0 && (
+                    <div className="space-y-4">
+                      {companies.slice(0, 3).map((company, idx) => (
+                        <div key={idx} className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="w-6 h-6 bg-[#0FAE96] rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</span>
+                            <span className="text-sm font-medium text-white">{company.company}</span>
+                            <span className="text-xs text-gray-500">({company.email})</span>
                           </div>
-                          <div>
-                            <span className="text-gray-400 text-xs uppercase tracking-wide">Body:</span>
-                            <p className="text-gray-300 mt-0.5 whitespace-pre-wrap text-xs leading-relaxed">
-                              {replacePlaceholders(body || 'Your email body will appear here...', company)}
-                            </p>
+                          <div className="space-y-2 text-sm">
+                            <div>
+                              <span className="text-gray-400 text-xs uppercase tracking-wide">Subject:</span>
+                              <p className="text-white font-medium mt-0.5">
+                                {replacePlaceholders(subject || 'Your subject here...', company)}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-gray-400 text-xs uppercase tracking-wide">Body:</span>
+                              <p className="text-gray-300 mt-0.5 whitespace-pre-wrap text-xs leading-relaxed">
+                                {replacePlaceholders(body || 'Your email body will appear here...', company)}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                    {companies.length > 3 && (
-                      <p className="text-center text-gray-500 text-sm">+ {companies.length - 3} more companies...</p>
-                    )}
-                  </div>
-                )}
+                      ))}
+                      {companies.length > 3 && (
+                        <p className="text-center text-gray-500 text-sm">+ {companies.length - 3} more companies...</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* RESUME PREVIEW (Mobile Tab Only - hidden on desktop) */}
