@@ -1,14 +1,50 @@
 "use client";
-import { useState } from "react";
+
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { MdWork } from "react-icons/md";
 import { FaTimes } from "react-icons/fa";
 import { Pencil, Trash2 } from "lucide-react";
 import { useExperienceStore } from "@/app/store";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+/* ================= AI PROMPT ================= */
+
+const buildExperiencePrompt = (
+  company: string,
+  position: string,
+  description: string
+) => `
+    You are a senior technical resume writer for software engineers.
+
+    Context (for understanding only, DO NOT mention company name or job title):
+      Company: "${company}"
+      Role: "${position}"
+      Notes: "${description}"
+
+    TASK:
+      - Generate EXACTLY 6 experience descriptions
+      - EACH description MUST have EXACTLY 3 sentences (exactly e full stops)
+      - EACH sentence MUST contain between 30 and 45 words (important)
+      - Use ONLY full stops to end sentences
+      - Must be very tech-heavy (stack, architecture, APIs, performance, security, scalability)
+
+    STRICT RULES:
+      - Do NOT mention company name
+      - Do NOT mention job title
+      - No emojis, bullets, numbering, or headings
+      - ATS-friendly resume language
+
+    OUTPUT FORMAT:
+      Return ONLY a valid JSON array of 6 strings.
+`.trim();
 
 export default function ExperienceInput() {
   const { experiences, addExperience, updateExperience, deleteExperience } =
     useExperienceStore();
+
   const [isOpen, setIsOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+
   const [formData, setFormData] = useState({
     company: "",
     position: "",
@@ -17,7 +53,85 @@ export default function ExperienceInput() {
     description: "",
   });
 
-  const [editId, setEditId] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  /* ================= AI STATE ================= */
+
+  const [apiKey, setApiKey] = useState<string | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [roughDescription, setRoughDescription] = useState("");
+
+  /* ================= GEMINI SETUP ================= */
+
+  useEffect(() => {
+    const keyFromLocal = localStorage.getItem("api_key");
+    if (!keyFromLocal) {
+      console.warn("No Gemini API key found in localStorage (api_key).");
+    }
+    setApiKey(keyFromLocal);
+  }, []);
+
+  const geminiClient = useMemo(() => {
+    if (!apiKey) return null;
+    try {
+      return new GoogleGenerativeAI(apiKey);
+    } catch {
+      return null;
+    }
+  }, [apiKey]);
+
+  /* ================= AI GENERATION ================= */
+
+  const generateAISuggestions = useCallback(async () => {
+    if (!geminiClient || !formData.company || !formData.position) return;
+
+    const baseDescription =
+      formData.description.trim() && roughDescription.trim()
+        ? `${formData.description.trim()}\n\n${roughDescription.trim()}`
+        : (formData.description.trim() || roughDescription.trim());
+
+    if (!baseDescription) {
+      alert("Please enter a rough description...");
+      return;
+    }
+
+    try {
+      setAiLoading(true);
+      setAiSuggestions([]);
+
+      const model = geminiClient.getGenerativeModel({
+        model: "gemini-2.5-flash-lite",
+      });
+
+      const prompt = buildExperiencePrompt(
+        formData.company,
+        formData.position,
+        baseDescription
+      );
+
+      const response = await model.generateContent(prompt);
+      const text =
+        response?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+      const match = text.match(/\[[\s\S]*\]/);
+      if (!match) throw new Error("Invalid Gemini response");
+
+      const parsed = JSON.parse(match[0]);
+      if (!Array.isArray(parsed) || parsed.length !== 6)
+        throw new Error("Invalid suggestion count");
+
+      setAiSuggestions(parsed);
+    } catch (err) {
+      console.error("Gemini error:", err);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [geminiClient, formData.company, formData.position, formData.description, roughDescription]);
+
+  /* ================= HANDLERS ================= */
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -25,16 +139,36 @@ export default function ExperienceInput() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const resetAIState = () => {
+    setAiOpen(false);
+    setAiSuggestions([]);
+    setRoughDescription("");
+    setAiLoading(false);
+  };
+
+  const formatMonthYear = (date: string) => {
+    if (!date) return "";
+    const d = new Date(date);
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    return `${month}/${year}`;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.company || !formData.position) return;
+    if (!formData.company || !formData.position || !formData.description) return;
+
+    const formattedDateRange = startDate
+      ? `${formatMonthYear(startDate)} - ${endDate ? formatMonthYear(endDate) : "Present"
+      }`
+      : "";
 
     if (editId !== null) {
       updateExperience(
         editId,
         formData.company,
         formData.position,
-        formData.dateRange,
+        formattedDateRange,
         formData.location,
         formData.description
       );
@@ -42,7 +176,7 @@ export default function ExperienceInput() {
       addExperience(
         formData.company,
         formData.position,
-        formData.dateRange,
+        formattedDateRange,
         formData.location,
         formData.description
       );
@@ -55,22 +189,53 @@ export default function ExperienceInput() {
       location: "",
       description: "",
     });
+    setStartDate("");
+    setEndDate("");
+
     setIsOpen(false);
+    resetAIState();
     setEditId(null);
   };
 
   const handleEdit = (id: string) => {
     const experience = experiences.find((exp) => exp.id === id);
-    if (experience) {
-      setFormData({ ...experience });
-      setIsOpen(true);
-      setEditId(id);
+    if (!experience) return;
+
+    resetAIState();
+
+    if (experience.dateRange) {
+      const [start, end] = experience.dateRange.split(" - ");
+
+      if (start) {
+        const [m, y] = start.split("/");
+        setStartDate(`${y}-${m}-01`);
+      }
+
+      if (end && end !== "Present") {
+        const [m, y] = end.split("/");
+        setEndDate(`${y}-${m}-01`);
+      } else {
+        setEndDate("");
+      }
     }
+
+    setFormData({
+      company: experience.company,
+      position: experience.position,
+      dateRange: experience.dateRange,
+      location: experience.location,
+      description: experience.description
+    });
+
+    setIsOpen(true);
+    setEditId(id);
   };
 
   const handleDelete = (id: string) => {
     deleteExperience(id);
   };
+
+  /* ================= UI ================= */
 
   return (
     <section className="p-6 border-b border-[rgba(255,255,255,0.05)] bg-gradient-to-b from-main-bg via-[rgba(17,1,30,0.95)] to-main-bg text-text-subtitle shadow-2xl rounded-xl">
@@ -129,8 +294,12 @@ export default function ExperienceInput() {
       {/* Add New Experience Button */}
       <button
         onClick={() => {
+          resetAIState();
+          setFormData({ company: "", position: "", dateRange: "", location: "", description: "" });
           setIsOpen(true);
           setEditId(null);
+          setStartDate("");
+          setEndDate("");
         }}
         className="w-full p-4 border-2 border-dashed border-gray-600 rounded-xl text-gray-400 bg-[rgba(255,255,255,0.05)] backdrop-blur-md hover:border-gray-500 hover:text-white transition-all duration-300 shadow-inner hover:shadow-glow"
       >
@@ -157,6 +326,7 @@ export default function ExperienceInput() {
             {/* Experience Form */}
             <form onSubmit={handleSubmit} className="bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E]">
               <div className="grid grid-cols-2 gap-5 mb-6">
+
                 <input
                   type="text"
                   name="company"
@@ -166,6 +336,7 @@ export default function ExperienceInput() {
                   onChange={handleChange}
                   required
                 />
+
                 <input
                   type="text"
                   name="position"
@@ -175,15 +346,34 @@ export default function ExperienceInput() {
                   onChange={handleChange}
                   required
                 />
-                <input
-                  type="date"
-                  name="dateRange"
-                  placeholder="DD MM YYYY - Present"
-                  className="w-full p-3 bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 focus:outline-none transition-all duration-300 shadow-inner hover:shadow-glow"
-                  value={formData.dateRange}
-                  onChange={handleChange}
-                  onFocus={(e) => e.target.showPicker()}
-                />
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-gray-400">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full p-3 bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 focus:outline-none transition-all duration-300 shadow-inner hover:shadow-glow"
+                    onFocus={(e) => e.target.showPicker()}
+                    required
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-gray-400">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full p-3 bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 focus:outline-none transition-all duration-300 shadow-inner hover:shadow-glow"
+                    onFocus={(e) => e.target.showPicker()}
+                  />
+                </div>
+
                 <input
                   type="text"
                   name="location"
@@ -196,9 +386,24 @@ export default function ExperienceInput() {
 
               {/* Description Textarea */}
               <div className="mb-6">
-                <label className="block text-sm font-medium mb-2 text-gray-300">
-                  Description
-                </label>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-gray-400">
+                    Description
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!formData.company || !formData.position}
+                    onClick={() => {
+                      resetAIState();
+                      setRoughDescription(formData.description);
+                      setAiOpen(true);
+                    }}
+                    className="text-xs px-3 py-1 rounded-full bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 disabled:opacity-40 transition-all duration-300"
+                  >
+                    ✨ AI Suggestions
+                  </button>
+                </div>
+
                 <textarea
                   name="description"
                   className="w-full p-4 bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] border border-gray-700 rounded-lg min-h-[160px] text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 focus:outline-none transition-all duration-300 shadow-inner hover:shadow-glow"
@@ -214,10 +419,61 @@ export default function ExperienceInput() {
                   type="submit"
                   className="px-6 py-2 bg-[#0eae95] text-white rounded-lg shadow-md hover:from-green-600 hover:to-green-800 hover:shadow-glow transition-all duration-300"
                 >
-                  {editId ? "Update" : "Create"}
+                  {editId ? "Update" : "Save"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* AI Suggestions Modal */}
+      {aiOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-6 z-[60]">
+          <div className="bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] text-white p-6 rounded-2xl w-full max-w-3xl border border-gray-700">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">
+                AI Job Description Suggestions
+              </h3>
+              <button onClick={() => setAiOpen(false)}>
+                <FaTimes />
+              </button>
+            </div>
+
+            {!aiSuggestions.length ? (
+              <>
+                <textarea
+                  className="w-full p-3 rounded-lg bg-black/40 border border-gray-700 min-h-[120px]"
+                  placeholder="Enter rough job description..."
+                  value={roughDescription}
+                  onChange={(e) => setRoughDescription(e.target.value)}
+                />
+                <button
+                  onClick={generateAISuggestions}
+                  disabled={aiLoading}
+                  className="mt-4 px-5 py-2 bg-purple-600 rounded-lg hover:bg-purple-700 transition-all duration-300"
+                >
+                  {aiLoading ? "Generating..." : "Generate AI Suggestions"}
+                </button>
+              </>
+            ) : (
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto scrollbar-thin">
+                {aiSuggestions.map((desc, i) => (
+                  <div
+                    key={i}
+                    onClick={() => {
+                      setFormData({ ...formData, description: desc });
+                      setAiOpen(false);
+                    }}
+                    className="p-4 border border-gray-700 rounded-lg hover:bg-purple-600/10 cursor-pointer transition-all duration-300"
+                  >
+                    <p className="text-sm text-gray-200 leading-relaxed">
+                      {desc}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
