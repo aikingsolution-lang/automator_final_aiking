@@ -6,6 +6,7 @@ import { BiBook } from "react-icons/bi";
 import { Pencil, Trash2 } from "lucide-react";
 import { useProjectStore } from "@/app/store";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { toast } from "react-toastify";
 
 /* ================= AI PROMPT ================= */
 
@@ -41,8 +42,46 @@ const buildProjectDescriptionPrompt = (
       - No headings
 
     OUTPUT FORMAT:
-    Retu  rn ONLY a valid JSON array of 6 strings.
+    Return ONLY a valid JSON array of 6 strings.
 `.trim();
+
+/* ================= VALIDATION ================= */
+
+const isValidDescription = (text: string): { valid: boolean; message: string } => {
+  const trimmed = text.trim();
+
+  // Check minimum length
+  if (trimmed.length < 20) {
+    return {
+      valid: false,
+      message: "Please enter at least 20 characters describing your project."
+    };
+  }
+
+  // Check for gibberish (mostly random characters, no real words)
+  const wordPattern = /\b[a-zA-Z]{3,}\b/g;
+  const words = trimmed.match(wordPattern) || [];
+  if (words.length < 3) {
+    return {
+      valid: false,
+      message: "Please write a meaningful description with at least 3 real words."
+    };
+  }
+
+  return { valid: true, message: "" };
+};
+
+/* ================= DATE FORMATTER ================= */
+
+const formatDateForDisplay = (dateStr: string): string => {
+  if (!dateStr) return "";
+  try {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  } catch {
+    return dateStr;
+  }
+};
 
 /* ================= COMPONENT ================= */
 
@@ -55,7 +94,8 @@ export default function ProjectInput() {
 
   const [formData, setFormData] = useState({
     name: "",
-    date: "",
+    startDate: "",
+    endDate: "",
     website: "",
     description: "",
   });
@@ -90,15 +130,25 @@ export default function ProjectInput() {
   /* ================= AI GENERATION ================= */
 
   const generateAISuggestions = useCallback(async () => {
-    if (!geminiClient || !formData.name) return;
+    if (!geminiClient) {
+      toast.error("API key not configured. Please add your Gemini API key.");
+      return;
+    }
+
+    if (!formData.name) {
+      toast.error("Please enter a project name first.");
+      return;
+    }
 
     const baseDescription =
       formData.description.trim() && roughDescription.trim()
         ? `${formData.description.trim()}\n\n${roughDescription.trim()}`
         : (formData.description.trim() || roughDescription.trim());
 
-    if (!baseDescription) {
-      alert("Please enter a rough description...");
+    // Validate the description before generating
+    const validation = isValidDescription(baseDescription);
+    if (!validation.valid) {
+      toast.error(validation.message);
       return;
     }
 
@@ -120,19 +170,28 @@ export default function ProjectInput() {
         response?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
       const match = text.match(/\[[\s\S]*\]/);
-      if (!match) throw new Error("Invalid Gemini response");
+      if (!match) {
+        toast.error("Failed to parse AI response. Please try again.");
+        throw new Error("Invalid Gemini response");
+      }
 
       const parsed = JSON.parse(match[0]);
-      if (!Array.isArray(parsed) || parsed.length !== 6)
+      if (!Array.isArray(parsed) || parsed.length !== 6) {
+        toast.error("Unexpected AI response format. Please try again.");
         throw new Error("Invalid suggestion count");
+      }
 
       setAiSuggestions(parsed);
+      toast.success("AI suggestions generated successfully!");
     } catch (err) {
       console.error("Gemini error:", err);
+      if (!aiSuggestions.length) {
+        toast.error("Failed to generate suggestions. Please try again.");
+      }
     } finally {
       setAiLoading(false);
     }
-  }, [geminiClient, formData.name, formData.description, roughDescription]);
+  }, [geminiClient, formData.name, formData.description, roughDescription, aiSuggestions.length]);
 
   /* ================= HANDLERS ================= */
 
@@ -151,26 +210,33 @@ export default function ProjectInput() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.date || !formData.description) return;
+    if (!formData.name || !formData.startDate || !formData.description) {
+      toast.error("Please fill in all required fields.");
+      return;
+    }
 
     if (editId) {
       updateProject(
         editId,
         formData.name,
         formData.description,
-        formData.date,
+        formData.startDate,
+        formData.endDate,
         formData.website
       );
+      toast.success("Project updated successfully!");
     } else {
       addProject(
         formData.name,
         formData.description,
-        formData.website,
-        formData.date
+        formData.startDate,
+        formData.endDate,
+        formData.website
       );
+      toast.success("Project added successfully!");
     }
 
-    setFormData({ name: "", date: "", website: "", description: "" });
+    setFormData({ name: "", startDate: "", endDate: "", website: "", description: "" });
     setEditId(null);
     resetAIState();
     setIsOpen(false);
@@ -184,7 +250,8 @@ export default function ProjectInput() {
 
     setFormData({
       name: project.name,
-      date: project.date,
+      startDate: project.startDate,
+      endDate: project.endDate,
       website: project.website,
       description: project.description,
     });
@@ -219,7 +286,11 @@ export default function ProjectInput() {
                 <strong className="text-lg font-semibold text-white drop-shadow-md">
                   {project.name}
                 </strong>
-                <p className="text-sm text-gray-300">{project.date}</p>
+                <p className="text-sm text-gray-300">
+                  {formatDateForDisplay(project.startDate)}
+                  {project.startDate && " - "}
+                  {project.endDate ? formatDateForDisplay(project.endDate) : (project.startDate ? "Present" : "")}
+                </p>
                 {project.website && (
                   <a
                     href={project.website}
@@ -255,7 +326,7 @@ export default function ProjectInput() {
       <button
         onClick={() => {
           resetAIState();
-          setFormData({ name: "", date: "", website: "", description: "" });
+          setFormData({ name: "", startDate: "", endDate: "", website: "", description: "" });
           setEditId(null);
           setIsOpen(true);
         }}
@@ -294,16 +365,6 @@ export default function ProjectInput() {
                 />
 
                 <input
-                  type="date"
-                  name="date"
-                  className="w-full p-3 bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 focus:outline-none transition-all duration-300 shadow-inner hover:shadow-glow"
-                  value={formData.date}
-                  onChange={handleChange}
-                  onFocus={(e) => e.target.showPicker()}
-                  required
-                />
-
-                <input
                   type="url"
                   name="website"
                   placeholder="Project Website (Optional)"
@@ -311,36 +372,75 @@ export default function ProjectInput() {
                   value={formData.website}
                   onChange={handleChange}
                 />
+
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-400 mb-1">Start Date *</label>
+                  <input
+                    type="date"
+                    name="startDate"
+                    className="w-full p-3 bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 focus:outline-none transition-all duration-300 shadow-inner hover:shadow-glow"
+                    value={formData.startDate}
+                    onChange={handleChange}
+                    onFocus={(e) => e.target.showPicker()}
+                    required
+                  />
+                </div>
+
+                <div className="flex flex-col">
+                  <label className="text-xs text-gray-400 mb-1">End Date (leave empty for ongoing)</label>
+                  <input
+                    type="date"
+                    name="endDate"
+                    className="w-full p-3 bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 focus:outline-none transition-all duration-300 shadow-inner hover:shadow-glow"
+                    value={formData.endDate}
+                    onChange={handleChange}
+                    onFocus={(e) => e.target.showPicker()}
+                  />
+                </div>
               </div>
 
               {/* Description Textarea + AI Button */}
               <div className="mb-6">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm text-gray-400">
-                    Project Description
+                    Project Description *
                   </span>
                   <button
                     type="button"
                     disabled={!formData.name}
                     onClick={() => {
+                      // Validate before opening AI modal
+                      const currentDesc = formData.description.trim();
+                      if (!currentDesc) {
+                        toast.warning("Please write a description first. AI will enhance your input, not generate from scratch.");
+                        return;
+                      }
+                      const validation = isValidDescription(currentDesc);
+                      if (!validation.valid) {
+                        toast.warning(validation.message + " AI needs meaningful input to enhance.");
+                        return;
+                      }
                       resetAIState();
                       setRoughDescription(formData.description);
                       setAiOpen(true);
                     }}
                     className="text-xs px-3 py-1 rounded-full bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 disabled:opacity-40 transition-all duration-300"
                   >
-                    ✨ AI Suggestions
+                    ✨ AI Enhance
                   </button>
                 </div>
 
                 <textarea
                   name="description"
                   className="w-full p-4 bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] border border-gray-700 rounded-lg min-h-[160px] text-white placeholder-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 focus:outline-none transition-all duration-300 shadow-inner hover:shadow-glow"
-                  placeholder="Describe your project..."
+                  placeholder="Describe your project... (AI will enhance this, so write at least 20 characters)"
                   value={formData.description}
                   onChange={handleChange}
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Tip: Write a brief description first, then use AI Enhance to make it professional.
+                </p>
               </div>
 
               <div className="flex justify-end">
@@ -362,7 +462,7 @@ export default function ProjectInput() {
           <div className="bg-gradient-to-b from-[#0F011E] via-[rgba(17,1,30,0.95)] to-[#0F011E] text-white p-6 rounded-2xl w-full max-w-3xl border border-gray-700">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold">
-                AI Project Description Suggestions
+                AI Project Description Enhancement
               </h3>
               <button onClick={() => setAiOpen(false)}>
                 <FaTimes />
@@ -371,28 +471,38 @@ export default function ProjectInput() {
 
             {!aiSuggestions.length ? (
               <>
+                <div className="mb-4 p-3 bg-purple-900/30 rounded-lg border border-purple-700/50">
+                  <p className="text-sm text-purple-200">
+                    💡 AI will enhance your description to be more professional and ATS-friendly.
+                    You can add more details below or click Generate to enhance your current input.
+                  </p>
+                </div>
                 <textarea
                   className="w-full p-3 rounded-lg bg-black/40 border border-gray-700 min-h-[120px]"
-                  placeholder="Enter rough project description..."
+                  placeholder="Add more details about your project (optional)..."
                   value={roughDescription}
                   onChange={(e) => setRoughDescription(e.target.value)}
                 />
                 <button
                   onClick={generateAISuggestions}
                   disabled={aiLoading}
-                  className="mt-4 px-5 py-2 bg-purple-600 rounded-lg hover:bg-purple-700 transition-all duration-300"
+                  className="mt-4 px-5 py-2 bg-purple-600 rounded-lg hover:bg-purple-700 transition-all duration-300 disabled:opacity-50"
                 >
-                  {aiLoading ? "Generating..." : "Generate AI Suggestions"}
+                  {aiLoading ? "Generating..." : "✨ Generate AI Enhanced Descriptions"}
                 </button>
               </>
             ) : (
               <div className="space-y-4 max-h-[60vh] overflow-y-auto scrollbar-thin">
+                <p className="text-sm text-gray-400 mb-2">
+                  Click on any suggestion to use it:
+                </p>
                 {aiSuggestions.map((desc, i) => (
                   <div
                     key={i}
                     onClick={() => {
                       setFormData({ ...formData, description: desc });
                       setAiOpen(false);
+                      toast.success("Description applied!");
                     }}
                     className="p-4 border border-gray-700 rounded-lg hover:bg-purple-600/10 cursor-pointer transition-all duration-300"
                   >

@@ -78,36 +78,38 @@ type Project = {
   id: string;
   name: string;
   description: string;
-  date: string;
+  startDate: string;
+  endDate: string;
   website: string;
 };
 
 type ProjectStore = {
   projects: Project[];
-  addProject: (name: string, description: string, date: string, website: string) => void;
-  updateProject: (id: string, name: string, description: string, date: string, website: string) => void;
+  addProject: (name: string, description: string, startDate: string, endDate: string, website: string) => void;
+  updateProject: (id: string, name: string, description: string, startDate: string, endDate: string, website: string) => void;
   deleteProject: (id: string) => void;
   resetProjects: () => void;
 };
 
 export const useProjectStore = create<ProjectStore>((set) => ({
   projects: [],
-  addProject: (name, description, website, date) => {
+  addProject: (name, description, startDate, endDate, website) => {
     const newProject: Project = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
       name,
       description,
+      startDate,
+      endDate,
       website,
-      date,
     };
     set((state) => ({
       projects: [...state.projects, newProject],
     }));
   },
-  updateProject: (id, name, description, date, website) =>
+  updateProject: (id, name, description, startDate, endDate, website) =>
     set((state) => ({
       projects: state.projects.map((project) =>
-        project.id === id ? { ...project, name, description, date, website } : project
+        project.id === id ? { ...project, name, description, startDate, endDate, website } : project
       ),
     })),
   deleteProject: (id) =>

@@ -11,6 +11,25 @@ import {
   useSkillStore,
 } from "@/app/store";
 
+// Helper function to format project dates
+const formatProjectDate = (startDate: string, endDate: string): string => {
+  const formatDate = (dateStr: string): string => {
+    if (!dateStr) return "";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const start = formatDate(startDate);
+  const end = endDate ? formatDate(endDate) : "Present";
+
+  if (!start) return end;
+  return `${start} - ${end}`;
+};
+
 export default function Leafish() {
   const { personalData } = usePersonalDataStore();
   const { certificates } = useCertificateStore();
@@ -34,15 +53,15 @@ export default function Leafish() {
           personalData.email ||
           personalData.twitter ||
           personalData.linkedin) && (
-          <div className="flex flex-wrap justify-center gap-2 text-sm text-gray-500 mt-3">
-            {personalData.address && <div>{personalData.address}</div>}
-            {personalData.phone && <div>{personalData.phone}</div>}
-            {personalData.email && <div>{personalData.email}</div>}
-            {personalData.github && <div>{personalData.github}</div>}
-            {personalData.twitter && <div>{personalData.twitter}</div>}
-            {personalData.linkedin && <div>{personalData.linkedin}</div>}
-          </div>
-        )}
+            <div className="flex flex-wrap justify-center gap-2 text-sm text-gray-500 mt-3">
+              {personalData.address && <div>{personalData.address}</div>}
+              {personalData.phone && <div>{personalData.phone}</div>}
+              {personalData.email && <div>{personalData.email}</div>}
+              {personalData.github && <div>{personalData.github}</div>}
+              {personalData.twitter && <div>{personalData.twitter}</div>}
+              {personalData.linkedin && <div>{personalData.linkedin}</div>}
+            </div>
+          )}
       </header>
 
       <main className="space-y-6">
@@ -197,7 +216,7 @@ export default function Leafish() {
                       proj.name
                     )}
                   </span>
-                  <span className="text-gray-500">{proj.date}</span>
+                  <span className="text-gray-500">{formatProjectDate(proj.startDate, proj.endDate)}</span>
                 </div>
                 <p className="text-gray-700">{proj.description}</p>
               </div>

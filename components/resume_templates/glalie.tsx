@@ -11,6 +11,25 @@ import {
   useSkillStore,
 } from "@/app/store";
 
+// Helper function to format project dates
+const formatProjectDate = (startDate: string, endDate: string): string => {
+  const formatDate = (dateStr: string): string => {
+    if (!dateStr) return "";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const start = formatDate(startDate);
+  const end = endDate ? formatDate(endDate) : "Present";
+
+  if (!start) return end;
+  return `${start} - ${end}`;
+};
+
 export default function Glalie() {
   const { personalData } = usePersonalDataStore();
   const { certificates } = useCertificateStore();
@@ -54,40 +73,40 @@ export default function Glalie() {
         </h2>
 
         {(personalData.address ||
-        personalData.phone ||
-        personalData.github ||
-        personalData.email ||
-        personalData.twitter ||
-        personalData.linkedin) && (
-          <div className="flex flex-wrap justify-center gap-3 text-sm text-gray-500 mt-4">
-            {personalData.address && <div>{personalData.address}</div>}
-            {personalData.phone && <div>{personalData.phone}</div>}
+          personalData.phone ||
+          personalData.github ||
+          personalData.email ||
+          personalData.twitter ||
+          personalData.linkedin) && (
+            <div className="flex flex-wrap justify-center gap-3 text-sm text-gray-500 mt-4">
+              {personalData.address && <div>{personalData.address}</div>}
+              {personalData.phone && <div>{personalData.phone}</div>}
 
-            {personalData.email && (
-              <a href={`mailto:${personalData.email}`} className="hover:underline">
-                {personalData.email}
-              </a>
-            )}
+              {personalData.email && (
+                <a href={`mailto:${personalData.email}`} className="hover:underline">
+                  {personalData.email}
+                </a>
+              )}
 
-            {personalData.github && (
-              <a href={personalData.github} target="_blank" className="hover:underline">
-                {personalData.github}
-              </a>
-            )}
+              {personalData.github && (
+                <a href={personalData.github} target="_blank" className="hover:underline">
+                  {personalData.github}
+                </a>
+              )}
 
-            {personalData.twitter && (
-              <a href={personalData.twitter} target="_blank" className="hover:underline">
-                {personalData.twitter}
-              </a>
-            )}
+              {personalData.twitter && (
+                <a href={personalData.twitter} target="_blank" className="hover:underline">
+                  {personalData.twitter}
+                </a>
+              )}
 
-            {personalData.linkedin && (
-              <a href={personalData.linkedin} target="_blank" className="hover:underline">
-                {personalData.linkedin}
-              </a>
-            )}
-          </div>
-        )}
+              {personalData.linkedin && (
+                <a href={personalData.linkedin} target="_blank" className="hover:underline">
+                  {personalData.linkedin}
+                </a>
+              )}
+            </div>
+          )}
       </header>
 
       {/* CONTENT */}
@@ -177,7 +196,7 @@ export default function Glalie() {
                     )}
                   </span>
 
-                  <span className="text-gray-500">{proj.date}</span>
+                  <span className="text-gray-500">{formatProjectDate(proj.startDate, proj.endDate)}</span>
                 </div>
 
                 {proj.description && (

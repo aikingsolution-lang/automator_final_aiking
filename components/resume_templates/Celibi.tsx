@@ -11,6 +11,25 @@ import {
   useSkillStore,
 } from "@/app/store";
 
+// Helper function to format project dates
+const formatProjectDate = (startDate: string, endDate: string): string => {
+  const formatDate = (dateStr: string): string => {
+    if (!dateStr) return "";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const start = formatDate(startDate);
+  const end = endDate ? formatDate(endDate) : "Present";
+
+  if (!start) return end;
+  return `${start} - ${end}`;
+};
+
 export default function Celibi() {
   const { personalData } = usePersonalDataStore();
   const { certificates } = useCertificateStore();
@@ -225,7 +244,7 @@ export default function Celibi() {
                       proj.name
                     )}
                   </span>
-                  <span className="text-gray-500">{proj.date}</span>
+                  <span className="text-gray-500">{formatProjectDate(proj.startDate, proj.endDate)}</span>
                 </div>
                 {proj.description && (
                   <p className="text-gray-700">{proj.description}</p>

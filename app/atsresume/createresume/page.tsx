@@ -442,7 +442,19 @@ const CreateResume: React.FC = () => {
         body: JSON.stringify({ html }),
       });
 
-      if (!res.ok) throw new Error("Failed to generate PDF");
+      if (!res.ok) {
+        // Get more details about the error
+        const errorText = await res.text();
+        console.error("PDF generation failed:", res.status, errorText);
+
+        // Check if it's a local dev issue with Puppeteer/Chromium
+        if (errorText.includes("chromium") || errorText.includes("puppeteer") || errorText.includes("executable")) {
+          toast.error("PDF preview not available locally. It will work when deployed to Vercel.");
+        } else {
+          toast.error("Failed to render preview. Please try again.");
+        }
+        return;
+      }
 
       const blob = await res.blob();
       lastPdfBlobRef.current = blob;
@@ -453,7 +465,7 @@ const CreateResume: React.FC = () => {
       setNeedsPreview(false);
     } catch (e) {
       console.error("Preview generation failed:", e);
-      toast.error("Failed to render preview.");
+      toast.error("Failed to render preview. Please check the console for details.");
     } finally {
       setRendering(false);
     }

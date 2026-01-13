@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import chromium from "@sparticuz/chromium";
-import puppeteer from "puppeteer-core";
 
 export const runtime = "nodejs"; // IMPORTANT for serverless on Vercel
 
@@ -12,13 +10,30 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Missing HTML" }, { status: 400 });
         }
 
-        const executablePath = await chromium.executablePath();
+        let browser;
 
-        const browser = await puppeteer.launch({
-            args: chromium.args,
-            executablePath,
-            headless: true,
-        });
+        // Check if we're in local development or serverless (Vercel)
+        const isLocalDev = process.env.NODE_ENV === "development" || !process.env.VERCEL;
+
+        if (isLocalDev) {
+            // Use regular puppeteer for local development
+            const puppeteer = await import("puppeteer");
+            browser = await puppeteer.default.launch({
+                headless: true,
+                args: ['--no-sandbox', '--disable-setuid-sandbox'],
+            });
+        } else {
+            // Use @sparticuz/chromium for serverless (Vercel)
+            const chromium = await import("@sparticuz/chromium");
+            const puppeteerCore = await import("puppeteer-core");
+
+            const executablePath = await chromium.default.executablePath();
+            browser = await puppeteerCore.default.launch({
+                args: chromium.default.args,
+                executablePath,
+                headless: true,
+            });
+        }
 
         const page = await browser.newPage();
 
@@ -45,6 +60,6 @@ export async function POST(req: Request) {
         });
     } catch (e) {
         console.error("PDF API error:", e);
-        return NextResponse.json({ error: "Failed to generate PDF" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to generate PDF", details: String(e) }, { status: 500 });
     }
 }

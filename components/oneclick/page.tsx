@@ -18,7 +18,9 @@ interface Project {
   name: string;
   description: string;
   website: string;
-  date: string;
+  startDate?: string;
+  endDate?: string;
+  date?: string; // backward compatibility
 }
 
 interface Education {
@@ -98,7 +100,10 @@ const fillResumeData = (data: ResumeData) => {
   });
 
   data.projects?.forEach((project) => {
-    addProject(project.name, project.description, project.website, project.date);
+    // Handle both new (startDate/endDate) and old (date) format for backward compatibility
+    const startDate = project.startDate || project.date || "";
+    const endDate = project.endDate || "";
+    addProject(project.name, project.description, startDate, endDate, project.website);
   });
 
   data.educations?.forEach((education) => {

@@ -12,6 +12,25 @@ import {
 } from "@/app/store";
 import { useThemeStore } from "@/app/store";
 
+// Helper function to format project dates
+const formatProjectDate = (startDate: string, endDate: string): string => {
+  const formatDate = (dateStr: string): string => {
+    if (!dateStr) return "";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const start = formatDate(startDate);
+  const end = endDate ? formatDate(endDate) : "Present";
+
+  if (!start) return end;
+  return `${start} - ${end}`;
+};
+
 export default function Classic() {
   // Access data from Zustand stores
   const { personalData } = usePersonalDataStore();
@@ -454,7 +473,7 @@ export default function Classic() {
                 {element.data.name}
               </a>
             </div>
-            <div className="text-xs sm:text-sm text-gray-500">{element.data.date}</div>
+            <div className="text-xs sm:text-sm text-gray-500">{formatProjectDate(element.data.startDate, element.data.endDate)}</div>
           </div>
         );
 
