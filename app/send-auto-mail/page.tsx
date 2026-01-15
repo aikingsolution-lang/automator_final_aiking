@@ -11,9 +11,13 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 // Toggle this to enable/disable mock data test button (for testing the custom email functionality)
 const ENABLE_MOCK_DATA = false;
 
+// Email status type for per-company tracking
+type EmailStatus = 'pending' | 'sending' | 'sent' | 'failed';
+
 const Page = () => {
-  const [isSending, setIsSending] = useState(true);
-  const [isSent, setIsSent] = useState(false);
+  // Per-company status tracking instead of global isSending/isSent
+  const [emailStatuses, setEmailStatuses] = useState<Map<string, EmailStatus>>(new Map());
+  const [sendingProgress, setSendingProgress] = useState({ current: 0, total: 0, isActive: false });
   const [emailArray, setEmailArray] = useState<string[]>([]);
   const [companies, setCompanies] = useState<any[]>([]);
   const [userEmail, setUserEmail] = useState("");
@@ -504,52 +508,62 @@ BODY:
     }
   };
 
-  // Batch email sending function
+  // Batch email sending function with PARALLEL execution
   const sendBatchEmails = async (sub: string, bod: string) => {
     try {
-      let sentEmailCount = 0;
       const emailCountRef = ref(db, `user/${uid}/Payment/email_count`);
       const snapshot = await get(emailCountRef);
       let existingCount = snapshot.exists() ? snapshot.val() : 0;
       console.log("Existing email count:", existingCount);
 
-      for (const email of emailArray) {
-        if (existingCount + sentEmailCount >= 10000) {
-          setEmailLimitReached(true);
-          toast.warning(
-            <div className="p-4 bg-gradient-to-r from-purple-800 via-pink-600 to-red-500 rounded-xl shadow-lg text-white">
-              <h2 className="text-lg font-bold">💼 Email Limit Reached</h2>
-              <p className="text-sm mt-1">
-                You've hit the <span className="font-semibold">10000 email</span> limit on your free plan.
-              </p>
-              <p className="text-sm">
-                Upgrade to <span className="underline font-semibold">Premium</span> to continue sending job applications automatically.
-              </p>
-            </div>,
-            { autoClose: 8000 }
-          );
-          break;
-        }
+      // Check limit
+      if (existingCount >= 10000) {
+        setEmailLimitReached(true);
+        toast.warning("Email limit reached. Upgrade to Premium to continue.");
+        return;
+      }
 
-        // Find company data for this email
-        const company = companies.find((c) => c.email === email);
+      // Initialize progress tracking
+      setSendingProgress({ current: 0, total: emailArray.length, isActive: true });
 
-        // Replace placeholders with actual company data
-        const personalizedSubject = replacePlaceholders(sub, company);
-        const personalizedBody = replacePlaceholders(bod, company);
+      // Initialize ALL emails as 'sending' immediately (all start at once)
+      const initialStatuses = new Map<string, EmailStatus>();
+      emailArray.forEach(email => initialStatuses.set(email, 'sending'));
+      setEmailStatuses(initialStatuses);
 
-        console.log(`Sending personalized email to ${company?.company || email}:`);
-        console.log('Subject:', personalizedSubject);
-        console.log('Body preview:', personalizedBody.substring(0, 100) + '...');
+      // Track completed emails for progress
+      let completedCount = 0;
+      let successCount = 0;
 
-        const success = await sendEmail(email, personalizedSubject, personalizedBody);
-        if (success) {
-          sentEmailCount += 1;
-          await set(emailCountRef, existingCount + sentEmailCount);
-          console.log(`Updated email count to ${existingCount + sentEmailCount}`);
+      // Create a promise for each email - all run in parallel
+      const emailPromises = emailArray.map(async (email) => {
+        try {
+          // Find company data for this email
+          const company = companies.find((c) => c.email === email);
 
-          // Save to sent_emails for duplicate tracking
-          if (company) {
+          // Replace placeholders with actual company data
+          const personalizedSubject = replacePlaceholders(sub, company);
+          const personalizedBody = replacePlaceholders(bod, company);
+
+          console.log(`Sending personalized email to ${company?.company || email}...`);
+
+          const success = await sendEmail(email, personalizedSubject, personalizedBody);
+
+          // Update status immediately when THIS email completes
+          setEmailStatuses(prev => {
+            const newMap = new Map(prev);
+            newMap.set(email, success ? 'sent' : 'failed');
+            return newMap;
+          });
+
+          // Update progress counter
+          completedCount++;
+          setSendingProgress(prev => ({ ...prev, current: completedCount }));
+
+          if (success && company) {
+            successCount++;
+
+            // Save to sent_emails for duplicate tracking
             const sentEmailRef = ref(db, `user/${uid}/sent_emails`);
             const newSentEmailRef = push(sentEmailRef);
             await set(newSentEmailRef, {
@@ -578,25 +592,40 @@ BODY:
               isDownloaded: false,
             });
           }
+
+          return { email, success };
+        } catch (error) {
+          // Mark as failed if there's an error
+          setEmailStatuses(prev => {
+            const newMap = new Map(prev);
+            newMap.set(email, 'failed');
+            return newMap;
+          });
+          completedCount++;
+          setSendingProgress(prev => ({ ...prev, current: completedCount }));
+          return { email, success: false };
         }
+      });
 
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-      }
+      // Wait for ALL emails to complete (parallel execution)
+      await Promise.allSettled(emailPromises);
 
-      // Only clear localStorage after all emails are sent and UI is updated
-      if (sentEmailCount > 0) {
+      // Update email count in database
+      if (successCount > 0) {
+        await set(emailCountRef, existingCount + successCount);
+        console.log(`Updated email count to ${existingCount + successCount}`);
         localStorage.removeItem("companies");
         console.log("Cleared companies from localStorage");
       }
-      setIsSending(false);
-      setIsSent(true);
-      toast.success(`Successfully sent ${sentEmailCount} emails!`);
+
+      // Mark sending as complete
+      setSendingProgress(prev => ({ ...prev, isActive: false }));
+      toast.success(`Successfully sent ${successCount}/${emailArray.length} emails!`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("Error sending emails:", message);
       toast.error("Failed to send emails.");
-      setIsSending(false);
-      setIsSent(true);
+      setSendingProgress(prev => ({ ...prev, isActive: false }));
     }
   };
 
@@ -618,7 +647,6 @@ BODY:
     setShowModal(false);
     setShowDuplicateWarning(false);
     setDuplicateCompanies([]);
-    setIsSending(true);
     await sendBatchEmails(subject, body);
     setSubject("");
     setBody("");
@@ -628,7 +656,6 @@ BODY:
   const handleConfirmDuplicates = async () => {
     setShowDuplicateWarning(false);
     setShowModal(false);
-    setIsSending(true);
     await sendBatchEmails(subject, body);
     setSubject("");
     setBody("");
@@ -867,9 +894,20 @@ BODY:
 
         {!emailLimitReached && companies.length > 0 && (
           <div>
-            <h2 className="text-3xl font-bold flex items-center gap-3">
+            <h2 className="text-3xl font-bold flex items-center gap-3 mb-4">
               <FaBriefcase className="text-white" />
-              {isSending ? "Sending Emails..." : "Applications"}
+              {sendingProgress.isActive ? (
+                <span className="flex items-center gap-3">
+                  Sending Emails
+                  <span className="text-lg font-normal text-[#0FAE96] bg-[#0FAE96]/20 px-3 py-1 rounded-full">
+                    {sendingProgress.current}/{sendingProgress.total}
+                  </span>
+                </span>
+              ) : emailStatuses.size > 0 ? (
+                "Applications Sent"
+              ) : (
+                "Applications"
+              )}
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {companies.map((company, index) => (
@@ -877,7 +915,10 @@ BODY:
                   key={index}
                   className="bg-[#11011E] border border-[#0FAE96] rounded-[10px] p-6 shadow-[0_0_8px_2px_#DFDFDF] hover:opacity-90 transition-opacity duration-150 h-full flex flex-col"
                 >
-                  <CompanyCard {...company} isSending={isSending} isSent={isSent} />
+                  <CompanyCard
+                    {...company}
+                    status={emailStatuses.get(company.email) || 'pending'}
+                  />
                 </div>
               ))}
             </div>
@@ -895,11 +936,16 @@ BODY:
             {ENABLE_MOCK_DATA && (
               <button
                 onClick={() => {
-                  // Load mock data for testing
+                  // Load mock data for testing - Indian IT companies
                   const mockCompanies = [
-                    { company: "TechCorp Inc", email: "hr@techcorp.com", location: "Remote", title: "Software Engineer" },
-                    { company: "DataSoft LLC", email: "jobs@datasoft.com", location: "New York", title: "Data Analyst" },
-                    { company: "WebDev Studios", email: "careers@webdev.io", location: "San Francisco", title: "Frontend Developer" },
+                    { company: "TCS", email: "hr@tcs.com", location: "Mumbai", title: "Software Developer" },
+                    { company: "Wipro", email: "careers@wipro.com", location: "Bangalore", title: "Full Stack Developer" },
+                    { company: "Infosys", email: "jobs@infosys.com", location: "Pune", title: "Senior Engineer" },
+                    { company: "Tech Mahindra", email: "hr@techmahindra.com", location: "Hyderabad", title: "Backend Developer" },
+                    { company: "HCL Technologies", email: "careers@hcl.com", location: "Noida", title: "React Developer" },
+                    { company: "Zoho", email: "jobs@zoho.com", location: "Chennai", title: "Product Engineer" },
+                    { company: "Mindtree", email: "hr@mindtree.com", location: "Bangalore", title: "Cloud Engineer" },
+                    { company: "Persistent Systems", email: "careers@persistent.com", location: "Pune", title: "DevOps Engineer" },
                   ];
                   setCompanies(mockCompanies);
                   setEmailArray(mockCompanies.map(c => c.email));
