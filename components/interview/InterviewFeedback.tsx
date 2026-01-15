@@ -191,7 +191,7 @@ Recording:
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold font-raleway text-[#ECF1F0]">{transcript?.length || 0}</div>
+            <div className="text-4xl font-bold font-raleway text-[#ECF1F0]">{transcript?.length/2 || 0}</div>
           </CardContent>
         </Card>
 

@@ -8,7 +8,7 @@ import {
 } from "@/lib/webrtc-utils";
 import { useToast } from "@/components/ui/use-toast";
 import { generateInterviewQuestion, generateInterviewFeedback } from "@/lib/gemini-utils";
-import type { SessionType } from "@/pages/Interview";
+import type { SessionType } from "@/pages/Interview"; 
 import { saveSessionWithRecording, saveSession } from "@/lib/db-service";
 import { onAuthStateChanged } from "firebase/auth";
 import app, { auth } from "@/firebase/config";
@@ -283,7 +283,7 @@ const InterviewSession: React.FC<InterviewSessionProps> = ({
 
         if (speechRecognitionRef.current.isSupported()) {
           // Let the user speak longer before we finalize their turn (tweak 6000–10000)
-          speechRecognitionRef.current.setSilenceTimeout(10000);
+          speechRecognitionRef.current.setSilenceTimeout(7500);
           speechRecognitionRef.current.setAutoRestart(true);
 
           speechRecognitionRef.current.on({
