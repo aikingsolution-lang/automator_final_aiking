@@ -705,52 +705,180 @@ BODY:
   //   checkVerifyEmail();
   // }, [userEmail, userName, resume]);
 
-  // Step 6: Fetch Gemini response
+  // Step 6: Fetch Gemini response with error handling and fallback
   useEffect(() => {
     if (!urd || emailLimitReached) return;
 
-    const fetchGeminiResponse = async () => {
+    // Fallback: Extract basic job info from resume text when API fails
+    const extractFallbackJobTitles = (resumeText: string) => {
+      console.log("🔄 Using fallback job title extraction...");
+
+      // Common job title patterns to look for in resume
+      const jobPatterns = [
+        /(?:working as|worked as|position of|role of|title:?)\s*([A-Za-z\s]+(?:Developer|Engineer|Designer|Manager|Analyst|Specialist|Consultant|Lead|Architect))/gi,
+        /(?:^|\n)([A-Za-z\s]+(?:Developer|Engineer|Designer|Manager|Analyst|Specialist|Consultant|Lead|Architect))(?:\s*[-–|]|\s*at|\s*\()/gim,
+      ];
+
+      const foundTitles = new Set<string>();
+
+      for (const pattern of jobPatterns) {
+        let match;
+        while ((match = pattern.exec(resumeText)) !== null) {
+          const title = match[1]?.trim();
+          if (title && title.length > 3 && title.length < 50) {
+            foundTitles.add(title);
+          }
+        }
+      }
+
+      // If no titles found, provide generic ones based on common keywords
+      if (foundTitles.size === 0) {
+        const keywords = resumeText.toLowerCase();
+        if (keywords.includes('react') || keywords.includes('frontend') || keywords.includes('javascript')) {
+          foundTitles.add('Frontend Developer');
+        }
+        if (keywords.includes('node') || keywords.includes('backend') || keywords.includes('api')) {
+          foundTitles.add('Backend Developer');
+        }
+        if (keywords.includes('python') || keywords.includes('data') || keywords.includes('machine learning')) {
+          foundTitles.add('Data Analyst');
+        }
+        if (keywords.includes('full stack') || keywords.includes('fullstack')) {
+          foundTitles.add('Full Stack Developer');
+        }
+        if (foundTitles.size === 0) {
+          foundTitles.add('Software Developer'); // Ultimate fallback
+        }
+      }
+
+      return Array.from(foundTitles).slice(0, 5).map(title => ({
+        jobTitle: title,
+        location: 'remote',
+        experience: '1-3'
+      }));
+    };
+
+    // Retry helper with exponential backoff
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    const fetchGeminiResponse = async (retryCount = 0, maxRetries = 3) => {
+      console.log("🚀 Starting Gemini Resume Analysis...");
+      console.log("📄 Resume length:", urd?.length || 0, "characters");
+      console.log("🔑 API Key present:", !!gemini_key);
+
+      // Check if API key is missing
+      if (!gemini_key) {
+        console.warn("⚠️ No Gemini API key found, using fallback extraction");
+        toast.warning("No API key found. Using basic job title extraction.");
+        const fallbackData = extractFallbackJobTitles(urd);
+        console.log("📋 Fallback Job Titles:", fallbackData.map(j => j.jobTitle).join(", "));
+        setJsonData(fallbackData);
+        return;
+      }
+
+      // Models to try in order of preference
+      const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"];
+
       try {
-        const exampleOutput = `[
-          {"jobTitle": "Python Developer", "location": "remote", "experience": "2-5"},
-          {"jobTitle": "Backend Developer", "location": "remote", "experience": "2-5"},
-          {"jobTitle": "Full Stack Developer", "location": "remote", "experience": "2-5"},
-          {"jobTitle": "MERN Stack Developer", "location": "remote", "experience": "2-5"},
-          {"jobTitle": "Software Engineer", "location": "remote", "experience": "2-5"}
-        ]`;
+        const userPrompt = `You are an expert career analyst. Analyze the following resume and extract suitable job titles that match the candidate's skills and experience.
 
-        const userPrompt = `Analyze the following resume and extract job titles, location, and experience range.
-                    Response format:
-                    \`\`\`json
-                    [
-                        {"jobTitle": "<Job Title>", "location": "<Preferred Location>", "experience": "<Experience Range>"}
-                    ]
-                    \`\`\`
-                    Resume: ${urd}
-                    Example Output:
-                    \`\`\`json
-                    ${exampleOutput}
-                    \`\`\``;
+IMPORTANT: Do NOT use any predefined list of job titles. Extract job titles DIRECTLY from:
+1. The candidate's actual skills mentioned in the resume
+2. Their work experience and previous job roles
+3. Technologies and tools they know
+4. Their education and certifications
 
+Return 3-5 most suitable job titles that the candidate could apply for.
+
+Response format (return ONLY valid JSON, no other text):
+\`\`\`json
+[
+    {"jobTitle": "<Extracted Job Title>", "location": "<Preferred Location or 'remote' if not specified>", "experience": "<X-Y years based on resume>"}
+]
+\`\`\`
+
+Resume to analyze:
+${urd}`;
+
+        console.log("📤 Sending request to Gemini API...");
         const genAI = new GoogleGenerativeAI(gemini_key);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
-        const response = await model.generateContent(userPrompt);
-        const textResponse = await response.response.text();
+        let textResponse = "";
+        let lastError = null;
 
-        const jsonMatch = textResponse.match(/```json\n([\s\S]*?)\n```/);
-        const jsonOutput = jsonMatch ? JSON.parse(jsonMatch[1]) : JSON.parse(textResponse);
+        // Try each model until one works
+        for (const modelName of modelsToTry) {
+          try {
+            console.log(`🤖 Trying model: ${modelName}...`);
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const response = await model.generateContent(userPrompt);
+            textResponse = await response.response.text();
+            console.log(`✅ Model ${modelName} succeeded!`);
+            break; // Success, exit loop
+          } catch (modelError: any) {
+            lastError = modelError;
+            console.warn(`⚠️ Model ${modelName} failed:`, modelError.message);
+
+            // If rate limited (429), wait and retry with same model
+            if (modelError.message?.includes('429') && retryCount < maxRetries) {
+              const waitTime = Math.pow(2, retryCount) * 2000; // Exponential backoff: 2s, 4s, 8s
+              console.log(`⏳ Rate limited. Waiting ${waitTime / 1000}s before retry ${retryCount + 1}/${maxRetries}...`);
+              toast.info(`Rate limited. Retrying in ${waitTime / 1000} seconds...`);
+              await delay(waitTime);
+              return fetchGeminiResponse(retryCount + 1, maxRetries);
+            }
+
+            // Try next model
+            continue;
+          }
+        }
+
+        // If no model worked
+        if (!textResponse) {
+          throw lastError || new Error("All models failed");
+        }
+
+        console.log("📥 Raw Gemini Response:", textResponse);
+
+        // Parse JSON response with error handling
+        let jsonOutput;
+        try {
+          const jsonMatch = textResponse.match(/```json\n([\s\S]*?)\n```/);
+          jsonOutput = jsonMatch ? JSON.parse(jsonMatch[1]) : JSON.parse(textResponse);
+        } catch (parseError) {
+          console.error("❌ JSON parsing failed, attempting flexible parse...");
+          // Try to extract any JSON array from the response
+          const flexMatch = textResponse.match(/\[[\s\S]*?\]/);
+          if (flexMatch) {
+            jsonOutput = JSON.parse(flexMatch[0]);
+          } else {
+            throw new Error("Could not parse Gemini response as JSON");
+          }
+        }
+
+        // Validate the response structure
+        if (!Array.isArray(jsonOutput) || jsonOutput.length === 0) {
+          throw new Error("Invalid response format: expected non-empty array");
+        }
 
         console.log("✅ Gemini Parsed Response:", jsonOutput);
+        console.log("📋 Extracted Job Titles:", jsonOutput.map((j: any) => j.jobTitle).join(", "));
         setJsonData(jsonOutput);
+
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         console.error("❌ Error in fetchGeminiResponse:", message);
-        toast.error("Failed to process resume with Gemini API.");
+
+        // Use fallback extraction
+        console.log("🔄 Falling back to local job title extraction...");
+        toast.warning("AI service unavailable. Using basic job extraction.");
+        const fallbackData = extractFallbackJobTitles(urd);
+        console.log("📋 Fallback Job Titles:", fallbackData.map(j => j.jobTitle).join(", "));
+        setJsonData(fallbackData);
       }
     };
 
-    // fetchGeminiResponse();
+    fetchGeminiResponse();
   }, [urd, gemini_key]);
 
   // Step 7: Process Gemini data
