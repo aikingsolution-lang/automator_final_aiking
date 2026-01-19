@@ -431,8 +431,11 @@ BODY:
     getEmailCount();
   }, [uid]);
 
-  // Step 4: Reusable email sending function with validation
-  const sendEmail = async (companyEmail: string, subjectParam?: string, bodyParam?: string) => {
+  // Step 4: Reusable email sending function with validation, timeout, and retry
+  const sendEmail = async (companyEmail: string, subjectParam?: string, bodyParam?: string, retryCount = 0): Promise<boolean> => {
+    const MAX_RETRIES = 2;
+    const TIMEOUT_MS = 30000; // 30 second timeout
+
     if (!userEmail) {
       toast.error("Sender email is missing.");
       return false;
@@ -454,19 +457,26 @@ BODY:
     const finalBody = bodyParam || ""; // Custom body or empty (no default "hello")
 
     // Debug log to check what's being sent
-    console.log('Sending email to:', companyEmail);
-    console.log('Subject:', finalSubject);
-    console.log('Body:', finalBody);
-    console.log('Full payload:', {
+    console.log(`📧 [Attempt ${retryCount + 1}/${MAX_RETRIES + 1}] Sending email to:`, companyEmail);
+    console.log('📝 Subject:', finalSubject);
+    console.log('📋 Payload:', {
       sender_email: userEmail,
       company_email: companyEmail,
       resume_link: resume,
       sender_name: userName,
-      subject: finalSubject,
-      text: finalBody,
     });
 
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      console.warn(`⏱️ Request to ${companyEmail} timed out after ${TIMEOUT_MS / 1000}s`);
+    }, TIMEOUT_MS);
+
     try {
+      console.log(`🌐 Making API request to email server...`);
+      const startTime = Date.now();
+
       const response = await fetch("https://send-auto-email-user-render.onrender.com/send-job-application", {
         method: "POST",
         body: JSON.stringify({
@@ -481,28 +491,69 @@ BODY:
         headers: {
           "Content-Type": "application/json",
         },
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+      console.log(`⏱️ Response received in ${elapsed}s, status: ${response.status}`);
+
       if (response.ok) {
-        console.log(`Email sent successfully to ${companyEmail}`);
+        console.log(`✅ Email sent successfully to ${companyEmail}`);
         return true;
       } else {
-        const data = await response.json();
-        console.error("Error from server:", data.error);
+        const data = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error("❌ Error from server:", data.error);
+
         if (response.status === 401 && data.reauthUrl) {
           toast.info("For security reasons, please verify your email again.");
           localStorage.setItem("emailPermissionGranted", "false");
           setTimeout(() => {
             window.location.href = data.reauthUrl || "/email_auth";
           }, 2000);
+        } else if (response.status >= 500 && retryCount < MAX_RETRIES) {
+          // Server error - retry
+          console.log(`🔄 Server error, retrying in 2s... (attempt ${retryCount + 2}/${MAX_RETRIES + 1})`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          return sendEmail(companyEmail, subjectParam, bodyParam, retryCount + 1);
         } else {
-          toast.error(`Error sending email to ${companyEmail}: ${data.error}`);
+          toast.error(`Error sending email to ${companyEmail}: ${data.error || 'Server error'}`);
         }
         return false;
       }
     } catch (error: unknown) {
+      clearTimeout(timeoutId);
       const message = error instanceof Error ? error.message : String(error);
-      console.error("Error sending email:", message);
+
+      // Check if it was a timeout/abort
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error(`⏱️ Request timed out for ${companyEmail}`);
+
+        // Retry on timeout
+        if (retryCount < MAX_RETRIES) {
+          console.log(`🔄 Timeout - retrying in 3s... (attempt ${retryCount + 2}/${MAX_RETRIES + 1})`);
+          toast.info(`Email to ${companyEmail} timed out. Retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          return sendEmail(companyEmail, subjectParam, bodyParam, retryCount + 1);
+        }
+
+        toast.error(`Email to ${companyEmail} timed out after ${MAX_RETRIES + 1} attempts.`);
+        return false;
+      }
+
+      // Network error - retry
+      if (message.includes('fetch') || message.includes('network') || message.includes('Failed to fetch')) {
+        console.error(`🌐 Network error for ${companyEmail}:`, message);
+
+        if (retryCount < MAX_RETRIES) {
+          console.log(`🔄 Network error - retrying in 3s... (attempt ${retryCount + 2}/${MAX_RETRIES + 1})`);
+          toast.info(`Network error. Retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          return sendEmail(companyEmail, subjectParam, bodyParam, retryCount + 1);
+        }
+      }
+
+      console.error("❌ Error sending email:", message);
       toast.error(`Failed to send email to ${companyEmail}.`);
       return false;
     }
